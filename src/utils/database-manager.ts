@@ -33,6 +33,17 @@ export class DatabaseConnectionManager extends EventEmitter {
         db: {
           url: process.env.DATABASE_URL,
         },
+      },
+      // 연결 풀 최적화 설정
+      __internal: {
+        engine: {
+          // 연결 풀 크기 설정
+          connectionLimit: parseInt(process.env.DB_CONNECTION_LIMIT || '10'),
+          // 연결 타임아웃 설정 (30초)
+          queryTimeout: parseInt(process.env.DB_QUERY_TIMEOUT || '30000'),
+          // 트랜잭션 타임아웃 설정 (5초)
+          transactionTimeout: parseInt(process.env.DB_TRANSACTION_TIMEOUT || '5000'),
+        }
       }
     });
   }

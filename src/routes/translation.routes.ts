@@ -8,251 +8,287 @@ import {
     translateText
 } from '../controllers/translation.controller';
 import { authenticateToken } from '../middlewares/auth.middleware';
+import {
+    TranslationValidation,
+    UserValidation,
+    ValidationRules,
+    createValidationMiddleware
+} from '../middlewares/validation.middleware';
 import { prisma } from '../server';
 import { TranslationCacheManager } from '../services/translation/cache-manager';
 import { TranslationService } from '../services/translation/translation-service';
+import { ResponseHelper } from '../utils/response.helper';
 
 const router = Router();
 const translationService = new TranslationService();
 const cacheManager = new TranslationCacheManager();
 
-/**
- * 뉴스 번역 API
- * GET /api/translation/news/:id?lang=en
- */
-router.get('/news/:id', async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { lang = 'ko' } = req.query;
+// =============================================================================
+// ⚠️ DEPRECATED API v1 - 이 API는 곧 제거될 예정입니다.
+// 새로운 개발에는 /api/v2/translations 를 사용해주세요.
+// =============================================================================
 
-    if (!id) {
-      return res.status(400).json({
-        success: false,
-        message: '뉴스 ID가 필요합니다.'
-      });
-    }
+// Deprecated 경고를 위한 미들웨어
+const deprecatedWarning = (req: any, res: any, next: any) => {
+  res.setHeader('X-API-Deprecated', 'true');
+  res.setHeader('X-API-Deprecated-Version', 'v1');
+  res.setHeader('X-API-Replacement', '/api/v2/translations');
+  res.setHeader('X-API-Sunset-Date', '2025-06-01');
+  
+  console.warn(`[DEPRECATED] ${req.method} ${req.originalUrl} - Use /api/v2/translations instead`);
+  next();
+};
 
-    const translatedNews = await translationService.translateNews(id, lang as string);
+// 모든 라우트에 deprecated 경고 적용
+router.use(deprecatedWarning);
 
-    if (!translatedNews) {
-      return res.status(404).json({
-        success: false,
-        message: '뉴스를 찾을 수 없습니다.'
-      });
-    }
-
-    return res.json({
-      success: true,
-      data: translatedNews
-    });
-  } catch (error) {
-    console.error('뉴스 번역 API 오류:', error);
-    return res.status(500).json({
-      success: false,
-      message: '번역 중 오류가 발생했습니다.',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-});
+// =============================================================================
+// 번역 서비스 (RESTful)
+// =============================================================================
 
 /**
- * 사용자 언어 설정 업데이트 API
- * POST /api/translation/user/language
+ * POST /api/translation/text
+ * 텍스트 번역 (인증 필요)
  */
-router.post('/user/language', authenticateToken, async (req: Request, res: Response) => {
-  try {
-    const userId = req.user?.id;
-    const { language } = req.body;
+router.post('/text', 
+  authenticateToken,
+  createValidationMiddleware(TranslationValidation.translateText()),
+  translateText
+);
 
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        message: '로그인이 필요합니다.'
-      });
-    }
+/**
+ * POST /api/translation/batch
+ * 배치 번역 (인증 필요)
+ */
+router.post('/batch', 
+  authenticateToken,
+  createValidationMiddleware(TranslationValidation.translateBatch()),
+  translateBatch
+);
 
-    if (!language) {
-      return res.status(400).json({
-        success: false,
-        message: '언어 설정이 필요합니다.'
-      });
-    }
+/**
+ * POST /api/translation/public/text
+ * 공개 텍스트 번역 (인증 불필요)
+ */
+router.post('/public/text', 
+  createValidationMiddleware(TranslationValidation.translateText()),
+  async (req: Request, res: Response) => {
+    try {
+      const { text, targetLang = 'ko' } = req.body;
 
-    // 지원하는 언어 확인
-    const supportedLanguages = ['ko', 'en', 'ja'];
-    if (!supportedLanguages.includes(language)) {
-      return res.status(400).json({
-        success: false,
-        message: '지원하지 않는 언어입니다.',
-        supportedLanguages
-      });
-    }
-
-    // 사용자 언어 설정 업데이트
-    const updatedUser = await prisma.user.update({
-      where: { id: userId },
-      data: { language },
-      select: {
-        id: true,
-        name: true,
-        language: true
+      const result = await translationService.translateText(text, targetLang);
+      
+      if (!result) {
+        return ResponseHelper.externalServiceError(res, '번역 처리 중 오류가 발생했습니다.');
       }
-    });
 
-    return res.json({
-      success: true,
-      message: '언어 설정이 업데이트되었습니다.',
-      data: updatedUser
-    });
-  } catch (error) {
-    console.error('언어 설정 업데이트 오류:', error);
-    return res.status(500).json({
-      success: false,
-      message: '언어 설정 업데이트 중 오류가 발생했습니다.',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    });
+      return ResponseHelper.success(res, result);
+    } catch (error) {
+      console.error('공개 번역 API 오류:', error);
+      return ResponseHelper.internalServerError(res, '번역 중 오류가 발생했습니다.');
+    }
   }
-});
+);
 
 /**
- * 번역 통계 조회 API (관리자용)
- * GET /api/translation/stats
+ * POST /api/translation/public/batch
+ * 공개 배치 번역 (인증 불필요)
  */
-router.get('/stats', authenticateToken, async (req: Request, res: Response) => {
-  try {
-    // TODO: 관리자 권한 확인 로직 추가
-    // const isAdmin = req.user?.role === 'admin';
-    // if (!isAdmin) {
-    //   return res.status(403).json({
-    //     success: false,
-    //     message: '관리자 권한이 필요합니다.'
-    //   });
-    // }
+router.post('/public/batch',
+  createValidationMiddleware(TranslationValidation.translateBatch()),
+  async (req: Request, res: Response) => {
+    try {
+      const { texts, targetLang = 'ko' } = req.body;
 
-    const stats = await cacheManager.getTranslationStats();
-    const cacheStatus = await cacheManager.getCacheStatus();
+      const results = await Promise.all(
+        texts.map((text: string) => translationService.translateText(text, targetLang))
+      );
 
-    return res.json({
-      success: true,
-      data: {
+      const successCount = results.filter(r => r !== null).length;
+      const failureCount = results.length - successCount;
+
+      return ResponseHelper.success(res, {
+        translations: results.filter(r => r !== null),
+        totalCount: results.length,
+        successCount,
+        failureCount
+      });
+    } catch (error) {
+      console.error('공개 배치 번역 API 오류:', error);
+      return ResponseHelper.internalServerError(res, '배치 번역 중 오류가 발생했습니다.');
+    }
+  }
+);
+
+// =============================================================================
+// 뉴스 번역 서비스
+// =============================================================================
+
+/**
+ * GET /api/translation/news/:id
+ * 뉴스 번역 조회
+ */
+router.get('/news/:id', 
+  createValidationMiddleware(TranslationValidation.translateNews()),
+  async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { lang = 'ko' } = req.query;
+
+      const translatedNews = await translationService.translateNews(id, lang as string);
+
+      if (!translatedNews) {
+        return ResponseHelper.notFound(res, '뉴스를 찾을 수 없습니다.');
+      }
+
+      return ResponseHelper.success(res, translatedNews);
+    } catch (error) {
+      console.error('뉴스 번역 API 오류:', error);
+      return ResponseHelper.internalServerError(res, '번역 중 오류가 발생했습니다.');
+    }
+  }
+);
+
+// =============================================================================
+// 사용자 설정 관리
+// =============================================================================
+
+/**
+ * PUT /api/translation/user/language
+ * 사용자 언어 설정 업데이트
+ */
+router.put('/user/language', 
+  authenticateToken,
+  createValidationMiddleware(UserValidation.updateLanguage()),
+  async (req: Request, res: Response) => {
+    try {
+      const userId = req.user?.id;
+      const { language } = req.body;
+
+      if (!userId) {
+        return ResponseHelper.unauthorized(res);
+      }
+
+      const updatedUser = await prisma.user.update({
+        where: { id: parseInt(userId) },
+        data: { language },
+        select: {
+          id: true,
+          name: true,
+          language: true
+        }
+      });
+
+      return ResponseHelper.success(res, updatedUser);
+    } catch (error) {
+      console.error('언어 설정 업데이트 오류:', error);
+      return ResponseHelper.internalServerError(res, '언어 설정 업데이트 중 오류가 발생했습니다.');
+    }
+  }
+);
+
+/**
+ * GET /api/translation/user/language
+ * 사용자 언어 설정 조회
+ */
+router.get('/user/language',
+  authenticateToken,
+  async (req: Request, res: Response) => {
+    try {
+      const userId = req.user?.id;
+
+      if (!userId) {
+        return ResponseHelper.unauthorized(res);
+      }
+
+      const user = await prisma.user.findUnique({
+        where: { id: parseInt(userId) },
+        select: {
+          id: true,
+          name: true,
+          language: true
+        }
+      });
+
+      if (!user) {
+        return ResponseHelper.notFound(res, '사용자를 찾을 수 없습니다.');
+      }
+
+      return ResponseHelper.success(res, user);
+    } catch (error) {
+      console.error('언어 설정 조회 오류:', error);
+      return ResponseHelper.internalServerError(res, '언어 설정 조회 중 오류가 발생했습니다.');
+    }
+  }
+);
+
+// =============================================================================
+// 번역 캐시 관리 (관리자용)
+// =============================================================================
+
+/**
+ * GET /api/translation/cache/status
+ * 번역 캐시 상태 조회
+ */
+router.get('/cache/status', 
+  authenticateToken, 
+  getCacheStatus
+);
+
+/**
+ * POST /api/translation/cache/cleanup
+ * 번역 캐시 정리
+ */
+router.post('/cache/cleanup', 
+  authenticateToken, 
+  cleanupCache
+);
+
+/**
+ * DELETE /api/translation/cache/languages/:targetLang
+ * 특정 언어의 번역 캐시 삭제
+ */
+router.delete('/cache/languages/:targetLang', 
+  authenticateToken,
+  createValidationMiddleware([
+    ValidationRules.id('targetLang')
+  ]),
+  clearLanguageCache
+);
+
+/**
+ * DELETE /api/translation/cache
+ * 번역 캐시 전체 삭제
+ */
+router.delete('/cache', 
+  authenticateToken, 
+  clearAllCache
+);
+
+// =============================================================================
+// 번역 통계 및 관리
+// =============================================================================
+
+/**
+ * GET /api/translation/stats
+ * 번역 통계 조회 (관리자용)
+ */
+router.get('/stats', 
+  authenticateToken, 
+  async (req: Request, res: Response) => {
+    try {
+      const stats = await cacheManager.getTranslationStats();
+      const cacheStatus = await cacheManager.getCacheStatus();
+
+      return ResponseHelper.success(res, {
         ...stats,
         cacheStatus
-      }
-    });
-  } catch (error) {
-    console.error('번역 통계 조회 오류:', error);
-    return res.status(500).json({
-      success: false,
-      message: '통계 조회 중 오류가 발생했습니다.',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-});
-
-/**
- * 번역 캐시 상태 조회 API
- * GET /api/translation/cache/status
- */
-router.get('/cache/status', authenticateToken, getCacheStatus);
-
-/**
- * 번역 캐시 정리 API (관리자용)
- * DELETE /api/translation/cache/cleanup
- */
-router.post('/cache/cleanup', authenticateToken, cleanupCache);
-
-/**
- * 특정 언어의 번역 캐시 삭제 API (관리자용)
- * DELETE /api/translation/cache/:language
- */
-router.delete('/cache/language/:targetLang', authenticateToken, clearLanguageCache);
-
-/**
- * 번역 캐시 전체 삭제 API (관리자용)
- * DELETE /api/translation/cache/all
- */
-router.delete('/cache/all', authenticateToken, clearAllCache);
-
-/**
- * 텍스트 번역 API
- * POST /api/translation/text
- */
-router.post('/text', authenticateToken, translateText);
-
-/**
- * 번역 배치 API
- * POST /api/translation/batch
- */
-router.post('/batch', authenticateToken, translateBatch);
-
-/**
- * 공개 텍스트 번역 API
- * POST /api/translation/public/text
- */
-router.post('/public/text', async (req: Request, res: Response) => {
-  try {
-    const { text, targetLang = 'ko' } = req.body;
-
-    if (!text) {
-      return res.status(400).json({
-        success: false,
-        message: '번역할 텍스트가 필요합니다.'
       });
+    } catch (error) {
+      console.error('번역 통계 조회 오류:', error);
+      return ResponseHelper.internalServerError(res, '통계 조회 중 오류가 발생했습니다.');
     }
-
-    const translatedText = await translationService.translateText(text, targetLang);
-
-    return res.json({
-      success: true,
-      data: { translatedText }
-    });
-  } catch (error) {
-    console.error('공개 번역 API 오류:', error);
-    return res.status(500).json({
-      success: false,
-      message: '번역 중 오류가 발생했습니다.',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    });
   }
-});
-
-/**
- * 공개 배치 번역 API
- * POST /api/translation/public/batch
- */
-router.post('/public/batch', async (req: Request, res: Response) => {
-  try {
-    const { texts, targetLang = 'ko' } = req.body;
-
-    if (!texts || !Array.isArray(texts) || texts.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: '번역할 텍스트 배열이 필요합니다.'
-      });
-    }
-
-    // 요청당 최대 10개 텍스트로 제한
-    if (texts.length > 10) {
-      return res.status(400).json({
-        success: false,
-        message: '한 번에 최대 10개의 텍스트만 번역 가능합니다.'
-      });
-    }
-
-    const translatedTexts = await translationService.translateBatch(texts, targetLang);
-
-    return res.json({
-      success: true,
-      data: { translatedTexts }
-    });
-  } catch (error) {
-    console.error('공개 배치 번역 API 오류:', error);
-    return res.status(500).json({
-      success: false,
-      message: '배치 번역 중 오류가 발생했습니다.',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-});
+);
 
 export default router; 

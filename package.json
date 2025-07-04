@@ -9,7 +9,9 @@
     "start": "node dist/server.js",
     "seed:rss": "ts-node src/scripts/seed-rss-sources.ts",
     "fetch:news": "ts-node src/scripts/fetch-rss-news.ts",
-    "test:db": "ts-node src/scripts/test-supabase-connection.ts"
+    "test:db": "ts-node src/scripts/test-supabase-connection.ts",
+    "generate-jwt-secret": "ts-node src/scripts/generate-jwt-secret.ts",
+    "setup-secrets": "ts-node src/scripts/generate-jwt-secret.ts --auto-setup"
   },
   "keywords": [],
   "author": "",
@@ -35,6 +37,8 @@
     "@types/jsonwebtoken": "^9.0.9",
     "@types/morgan": "^1.9.9",
     "@types/node-cron": "^3.0.11",
+    "@types/swagger-jsdoc": "^6.0.4",
+    "@types/swagger-ui-express": "^4.1.8",
     "@types/uuid": "^10.0.0",
     "axios": "^1.8.4",
     "bcrypt": "^5.1.1",
@@ -42,6 +46,7 @@
     "cors": "^2.8.5",
     "dotenv": "^16.0.3",
     "express": "^4.18.2",
+    "express-validator": "^7.2.1",
     "helmet": "^7.0.0",
     "jsonwebtoken": "^9.0.1",
     "morgan": "^1.10.0",
@@ -50,9 +55,11 @@
     "openai": "^4.95.1",
     "passport": "^0.7.0",
     "passport-kakao": "^1.0.1",
-    "rss-parser": "^3.13.0",
-    "uuid": "^11.1.0",
     "rate-limiter-flexible": "^2.4.1",
+    "rss-parser": "^3.13.0",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1",
+    "uuid": "^11.1.0",
     "winston": "^3.10.0",
     "winston-daily-rotate-file": "^4.7.1"
   }

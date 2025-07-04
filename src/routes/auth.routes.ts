@@ -8,6 +8,25 @@ import { login, signup } from '../controllers/auth.controller';
 const router = Router();
 const prisma = new PrismaClient();
 
+// =============================================================================
+// ⚠️ DEPRECATED API v1 - 이 API는 곧 제거될 예정입니다.
+// 새로운 개발에는 /api/v2/users 를 사용해주세요.
+// =============================================================================
+
+// Deprecated 경고를 위한 미들웨어
+const deprecatedWarning = (req: any, res: any, next: any) => {
+  res.setHeader('X-API-Deprecated', 'true');
+  res.setHeader('X-API-Deprecated-Version', 'v1');
+  res.setHeader('X-API-Replacement', '/api/v2/users');
+  res.setHeader('X-API-Sunset-Date', '2025-06-01');
+  
+  console.warn(`[DEPRECATED] ${req.method} ${req.originalUrl} - Use /api/v2/users instead`);
+  next();
+};
+
+// 모든 라우트에 deprecated 경고 적용
+router.use(deprecatedWarning);
+
 router.post('/signup', signup);
 router.post('/login', login);
 

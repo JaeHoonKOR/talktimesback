@@ -3,18 +3,28 @@ import dotenv from 'dotenv';
 import express from 'express';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from './config/swagger';
 import { detectLocationMiddleware } from './middlewares/location.middleware';
 import healthRoutes from './routes/health.routes';
 import kakaoRoutes from './routes/kakao.routes';
 import newsRoutes from './routes/news.routes';
 import translationRoutes from './routes/translation.routes';
+// V2 API 라우터 (RESTful)
+import newsRoutesV2 from './routes/news.routes.v2';
+import translationRoutesV2 from './routes/translations.routes.v2';
+import userRoutesV2 from './routes/users.routes.v2';
 import { setupNewsCronJobs } from './services/news/news-cron';
 import { ConnectionEvent, dbManager } from './utils/database-manager';
 import { AppError, ErrorType, globalErrorHandler } from './utils/error-handler';
+import { validateEnvironmentVariables, maskSensitiveValue } from './utils/env-validator';
 import { dbLogger, serverLogger } from './utils/logger';
 
 // 환경 변수 로드
 dotenv.config();
+
+// 환경 변수 검증 (서버 시작 전 필수)
+validateEnvironmentVariables();
 
 // VERBOSE_LOGGING 환경 변수 설정 (기본값: false)
 if (process.env.VERBOSE_LOGGING === undefined) {
@@ -49,13 +59,19 @@ app.use((req, res, next) => {
   
   const startTime = Date.now();
   
+  // 민감한 정보 마스킹
+  const sanitizedBody = req.body ? Object.keys(req.body).reduce((acc, key) => {
+    acc[key] = maskSensitiveValue(key, String(req.body[key]));
+    return acc;
+  }, {} as Record<string, string>) : {};
+
   serverLogger.debug(`요청 시작: ${req.method} ${req.originalUrl}`, {
     method: req.method,
     path: req.originalUrl,
     ip: req.ip,
     userAgent: req.get('User-Agent'),
     query: req.query,
-    body: req.body
+    body: sanitizedBody
   });
   
   res.on('finish', () => {
@@ -110,6 +126,33 @@ app.use('/health', healthRoutes);
 app.use('/api/kakao', kakaoRoutes);
 app.use('/api/news', newsRoutes);
 app.use('/api/translation', translationRoutes);
+
+// V2 API 라우터 연결 (RESTful)
+app.use('/api/v2/news', newsRoutesV2);
+app.use('/api/v2/translations', translationRoutesV2);
+app.use('/api/v2/users', userRoutesV2);
+
+// Swagger UI 라우트 (개발 환경에서만)
+if (process.env.NODE_ENV !== 'production') {
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+    explorer: true,
+    customCss: '.swagger-ui .topbar { display: none }',
+    customSiteTitle: 'JikSend API Documentation',
+    swaggerOptions: {
+      persistAuthorization: true,
+      displayRequestDuration: true,
+      filter: true,
+      showExtensions: true,
+      showCommonExtensions: true,
+    },
+  }));
+  
+  // Swagger JSON 스펙 제공
+  app.get('/api-docs.json', (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.send(swaggerSpec);
+  });
+}
 
 // 404 오류 처리
 app.use((req, res, next) => {

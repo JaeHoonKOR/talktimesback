@@ -5,7 +5,7 @@ import jwt from 'jsonwebtoken';
 import { LoginDto, SignUpDto } from '../types/auth.types';
 
 const prisma = new PrismaClient();
-const JWT_SECRET = process.env.JWT_SECRET || 'your-jwt-secret-key';
+const JWT_SECRET = process.env.JWT_SECRET!; // 환경 변수 검증으로 존재 보장됨
 
 export const signup = async (req: Request, res: Response) => {
   try {
@@ -20,8 +20,8 @@ export const signup = async (req: Request, res: Response) => {
       return res.status(400).json({ message: '이미 존재하는 이메일입니다.' });
     }
 
-    // 비밀번호 해싱
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // 비밀번호 해싱 (보안 강화를 위해 12 라운드 사용)
+    const hashedPassword = await bcrypt.hash(password, 12);
 
     // 사용자 생성
     const user = await prisma.user.create({
@@ -67,6 +67,10 @@ export const login = async (req: Request, res: Response) => {
     }
 
     // 비밀번호 확인
+    if (!user.password) {
+      return res.status(401).json({ message: '이메일 또는 비밀번호가 잘못되었습니다.' });
+    }
+
     const isPasswordValid = await bcrypt.compare(password, user.password);
 
     if (!isPasswordValid) {
