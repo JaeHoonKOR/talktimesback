@@ -1,0 +1,139 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// 사용자 테이블
+model User {
+  id             Int       @id @default(autoincrement())
+  kakaoId        String?   @unique // 카카오톡 ID
+  email          String?   @unique // 이메일 (웹 로그인용)
+  password       String?   // 비밀번호 (웹 로그인용)
+  name           String?   // 이름
+  provider       String?   // 소셜 로그인 제공자 (kakao, google, naver)
+  profileImage   String?   // 프로필 이미지 URL
+  preferredTime  String    @default("08:00") // 선호 발송 시간
+  language       String    @default("ko")    // 사용자 선호 언어 추가
+  createdAt      DateTime  @default(now())   // 생성 시간
+  updatedAt      DateTime  @updatedAt        // 업데이트 시간
+  
+  // 관계 설정
+  keywords       Keyword[]   // 사용자의 관심 키워드
+  newsLogs       NewsLog[]   // 사용자에게 발송된 뉴스 로그
+  userPreference UserPreference? // 사용자 환경설정
+}
+
+// 사용자 환경설정
+model UserPreference {
+  id           Int     @id @default(autoincrement())
+  userId       Int     @unique
+  user         User    @relation(fields: [userId], references: [id])
+  
+  // 알림 설정
+  enableNotification Boolean @default(true)  // 알림 활성화 여부
+  
+  // 콘텐츠 설정
+  contentLength     String  @default("medium") // short, medium, long
+  includeImages     Boolean @default(true)     // 이미지 포함 여부
+  includeVideos     Boolean @default(false)    // 비디오 포함 여부
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// 키워드 테이블
+model Keyword {
+  id        Int      @id @default(autoincrement())
+  userId    Int      // 사용자 ID
+  user      User     @relation(fields: [userId], references: [id])
+  keyword   String   // 키워드 내용
+  category  String?  // 키워드 카테고리 (태그)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, keyword]) // 인덱스 추가
+}
+
+// 뉴스 로그 테이블
+model NewsLog {
+  id          Int       @id @default(autoincrement())
+  userId      Int       // 사용자 ID
+  user        User      @relation(fields: [userId], references: [id])
+  url         String    // 뉴스 URL
+  title       String    // 뉴스 제목
+  summary     String    // 요약 내용
+  source      String    // 뉴스 출처
+  category    String    // 뉴스 카테고리
+  imageUrl    String?   // 뉴스 이미지 URL
+  sentAt      DateTime  @default(now()) // 발송 시간
+  readAt      DateTime? // 읽은 시간
+  clickedAt   DateTime? // 클릭 시간
+  feedbackScore Int?     // 피드백 점수
+  
+  @@index([userId, category]) // 인덱스 추가
+}
+
+// 뉴스 소스 테이블
+model NewsSource {
+  id          Int      @id @default(autoincrement())
+  name        String   // 소스 이름
+  url         String   // 소스 URL
+  category    String   // 카테고리
+  type        String   // rss, api, scrape
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([category, active]) // 인덱스 추가
+}
+
+model News {
+  id          String   @id @default(uuid())
+  title       String
+  url         String   @unique
+  source      String
+  sourceId    String
+  category    String
+  publishedAt DateTime
+  excerpt     String   @db.Text
+  content     String?  @db.Text
+  imageUrl    String?
+  isProcessed Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model NewsSummary {
+  id             String   @id @default(uuid())
+  originalNewsIds String[] 
+  category       String
+  title          String
+  summary        String   @db.Text
+  keywords       String[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+// 번역 캐싱을 위한 Translation 모델
+model Translation {
+  id            String   @id @default(uuid())
+  sourceText    String   @db.Text
+  targetLang    String
+  translatedText String  @db.Text
+  usageCount    Int      @default(1)
+  lastUsedAt    DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([sourceText, targetLang])
+  @@index([sourceText, targetLang])
+  @@index([lastUsedAt])
+}
