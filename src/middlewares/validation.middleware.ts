@@ -18,7 +18,7 @@ export const handleValidationErrors = (
     ResponseHelper.validationError(
       res,
       firstError.msg,
-      firstError.param,
+      (firstError as any).param || 'field',
       errors.array()
     );
     return;
@@ -31,19 +31,40 @@ export const handleValidationErrors = (
  * 공통 검증 규칙
  */
 export class ValidationRules {
+  // ID 검증
+  static id(paramName: string = 'id'): ValidationChain[] {
+    return [param(paramName)
+      .notEmpty()
+      .withMessage(`${paramName}은 필수입니다.`)
+      .isString()
+      .withMessage(`유효한 ${paramName}을 입력해주세요.`)];
+  }
+
   // 페이지네이션 검증
   static pagination(): ValidationChain[] {
     return [
       query('page')
         .optional()
         .isInt({ min: 1 })
-        .withMessage('페이지는 1 이상의 정수여야 합니다.')
-        .toInt(),
+        .withMessage('페이지는 1 이상의 정수여야 합니다.'),
       query('limit')
         .optional()
         .isInt({ min: 1, max: 100 })
-        .withMessage('제한은 1-100 사이의 정수여야 합니다.')
-        .toInt()
+        .withMessage('한 페이지당 항목 수는 1-100 사이여야 합니다.')
+    ];
+  }
+
+  // 커서 기반 페이지네이션 검증
+  static cursorPagination(): ValidationChain[] {
+    return [
+      query('cursor')
+        .optional()
+        .isString()
+        .withMessage('커서는 문자열이어야 합니다.'),
+      query('limit')
+        .optional()
+        .isInt({ min: 1, max: 100 })
+        .withMessage('한 페이지당 항목 수는 1-100 사이여야 합니다.')
     ];
   }
 
@@ -67,13 +88,11 @@ export class ValidationRules {
       query('startDate')
         .optional()
         .isISO8601()
-        .withMessage('시작 날짜는 ISO8601 형식이어야 합니다.')
-        .toDate(),
+        .withMessage('시작 날짜는 유효한 ISO8601 형식이어야 합니다.'),
       query('endDate')
         .optional()
         .isISO8601()
-        .withMessage('종료 날짜는 ISO8601 형식이어야 합니다.')
-        .toDate()
+        .withMessage('종료 날짜는 유효한 ISO8601 형식이어야 합니다.')
     ];
   }
 
@@ -88,30 +107,13 @@ export class ValidationRules {
     ];
   }
 
-  // ID 검증
-  static id(paramName: string = 'id'): ValidationChain {
-    return param(paramName)
-      .notEmpty()
-      .withMessage(`${paramName}는 필수입니다.`)
-      .custom((value) => {
-        // UUID 또는 숫자 ID 검증
-        if (typeof value === 'string' && value.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-          return true;
-        }
-        if (typeof value === 'string' && value.match(/^\d+$/)) {
-          return true;
-        }
-        throw new Error('유효한 ID 형식이 아닙니다.');
-      });
-  }
-
   // 언어 코드 검증
   static languageCode(): ValidationChain {
-    return body('targetLang')
+    return param('lang')
       .notEmpty()
-      .withMessage('대상 언어는 필수입니다.')
-      .isIn(['ko', 'en', 'ja', 'zh', 'es', 'fr', 'de', 'ru'])
-      .withMessage('지원하지 않는 언어입니다.');
+      .withMessage('언어 코드는 필수입니다.')
+      .isLength({ min: 2, max: 5 })
+      .withMessage('언어 코드는 2-5자 사이여야 합니다.');
   }
 
   // 카테고리 검증
@@ -120,6 +122,15 @@ export class ValidationRules {
       .optional()
       .isIn(['politics', 'economy', 'society', 'culture', 'world', 'sports', 'entertainment', 'tech'])
       .withMessage('유효한 카테고리가 아닙니다.');
+  }
+
+  // 텍스트 길이 검증
+  static textLength(maxLength: number = 1000): ValidationChain {
+    return body('text')
+      .notEmpty()
+      .withMessage('텍스트는 필수입니다.')
+      .isLength({ min: 1, max: maxLength })
+      .withMessage(`텍스트는 1-${maxLength}자 사이여야 합니다.`);
   }
 }
 
@@ -135,6 +146,37 @@ export class NewsValidation {
       ...ValidationRules.dateRange(),
       ...ValidationRules.search(),
       ValidationRules.category(),
+      query('sources')
+        .optional()
+        .custom((value) => {
+          if (typeof value === 'string') {
+            return value.split(',').every(source => source.trim().length > 0);
+          }
+          if (Array.isArray(value)) {
+            return value.every(source => typeof source === 'string' && source.trim().length > 0);
+          }
+          return true; // 빈 값은 허용
+        })
+        .withMessage('소스는 유효한 문자열 배열이어야 합니다.')
+    ];
+  }
+
+  // 뉴스 목록 조회 검증 (커서 기반 페이지네이션)
+  static getNewsListCursor(): ValidationChain[] {
+    return [
+      ...ValidationRules.cursorPagination(),
+      ...ValidationRules.sorting(['createdAt', 'publishedAt', 'title']),
+      ...ValidationRules.dateRange(),
+      ...ValidationRules.search(),
+      ValidationRules.category(),
+      query('personalized')
+        .optional()
+        .isBoolean()
+        .withMessage('personalized는 boolean 값이어야 합니다.'),
+      query('sort')
+        .optional()
+        .isIn(['latest', 'popular', 'relevance'])
+        .withMessage('정렬 방식은 latest, popular, relevance 중 하나여야 합니다.'),
       query('sources')
         .optional()
         .custom((value) => {
@@ -176,7 +218,7 @@ export class NewsValidation {
 
   // 뉴스 ID 검증
   static getNewsById(): ValidationChain[] {
-    return [ValidationRules.id()];
+    return ValidationRules.id();
   }
 
   // 카테고리별 뉴스 검증
@@ -188,6 +230,84 @@ export class NewsValidation {
         .isIn(['politics', 'economy', 'society', 'culture', 'world', 'sports', 'entertainment', 'tech'])
         .withMessage('유효한 카테고리가 아닙니다.'),
       ...ValidationRules.pagination()
+    ];
+  }
+
+  static createNews(): ValidationChain[] {
+    return [
+      body('title')
+        .notEmpty()
+        .withMessage('제목은 필수입니다.')
+        .isLength({ min: 1, max: 500 })
+        .withMessage('제목은 1-500자 사이여야 합니다.'),
+      
+      body('content')
+        .notEmpty()
+        .withMessage('내용은 필수입니다.')
+        .isLength({ min: 10 })
+        .withMessage('내용은 최소 10자 이상이어야 합니다.'),
+      
+      body('url')
+        .notEmpty()
+        .withMessage('URL은 필수입니다.')
+        .isURL()
+        .withMessage('유효한 URL을 입력해주세요.'),
+      
+      body('source')
+        .notEmpty()
+        .withMessage('뉴스 소스는 필수입니다.')
+        .isLength({ min: 1, max: 100 })
+        .withMessage('뉴스 소스는 1-100자 사이여야 합니다.')
+    ];
+  }
+
+  static updateNews(): ValidationChain[] {
+    return [
+      param('id')
+        .notEmpty()
+        .withMessage('뉴스 ID는 필수입니다.')
+        .isString()
+        .withMessage('유효한 뉴스 ID를 입력해주세요.'),
+      
+      body('title')
+        .optional()
+        .isLength({ min: 1, max: 500 })
+        .withMessage('제목은 1-500자 사이여야 합니다.'),
+      
+      body('content')
+        .optional()
+        .isLength({ min: 10 })
+        .withMessage('내용은 최소 10자 이상이어야 합니다.')
+    ];
+  }
+
+  static createNewsCollection(): ValidationChain[] {
+    return [
+      body('name')
+        .notEmpty()
+        .withMessage('컬렉션 이름은 필수입니다.')
+        .isLength({ min: 1, max: 100 })
+        .withMessage('컬렉션 이름은 1-100자 사이여야 합니다.'),
+      
+      body('description')
+        .optional()
+        .isLength({ max: 500 })
+        .withMessage('설명은 최대 500자까지 가능합니다.')
+    ];
+  }
+
+  static updateNewsCollection(): ValidationChain[] {
+    return [
+      param('id')
+        .notEmpty()
+        .withMessage('컬렉션 ID는 필수입니다.')
+        .isString()
+        .withMessage('유효한 컬렉션 ID를 입력해주세요.'),
+      
+      body('name')
+        .optional()
+        .isLength({ min: 1, max: 100 })
+        .withMessage('컬렉션 이름은 1-100자 사이여야 합니다.')
     ];
   }
 }
@@ -203,13 +323,18 @@ export class TranslationValidation {
         .notEmpty()
         .withMessage('번역할 텍스트는 필수입니다.')
         .isLength({ min: 1, max: 5000 })
-        .withMessage('텍스트는 1-5000자 사이여야 합니다.')
-        .trim(),
-      ValidationRules.languageCode(),
+        .withMessage('텍스트는 1-5000자 사이여야 합니다.'),
+      
+      body('targetLang')
+        .notEmpty()
+        .withMessage('대상 언어는 필수입니다.')
+        .isLength({ min: 2, max: 5 })
+        .withMessage('언어 코드는 2-5자 사이여야 합니다.'),
+      
       body('sourceLang')
         .optional()
-        .isIn(['ko', 'en', 'ja', 'zh', 'es', 'fr', 'de', 'ru'])
-        .withMessage('지원하지 않는 소스 언어입니다.')
+        .isLength({ min: 2, max: 5 })
+        .withMessage('소스 언어 코드는 2-5자 사이여야 합니다.')
     ];
   }
 
@@ -218,31 +343,45 @@ export class TranslationValidation {
     return [
       body('texts')
         .isArray({ min: 1, max: 50 })
-        .withMessage('텍스트는 1-50개의 배열이어야 합니다.')
-        .custom((texts) => {
-          return texts.every((text: any) => 
-            typeof text === 'string' && 
-            text.trim().length > 0 && 
-            text.length <= 5000
-          );
-        })
-        .withMessage('모든 텍스트는 1-5000자의 유효한 문자열이어야 합니다.'),
-      ValidationRules.languageCode(),
-      body('sourceLang')
-        .optional()
-        .isIn(['ko', 'en', 'ja', 'zh', 'es', 'fr', 'de', 'ru'])
-        .withMessage('지원하지 않는 소스 언어입니다.')
+        .withMessage('텍스트 배열은 1-50개 사이여야 합니다.'),
+      
+      body('texts.*')
+        .isLength({ min: 1, max: 1000 })
+        .withMessage('각 텍스트는 1-1000자 사이여야 합니다.'),
+      
+      body('targetLang')
+        .notEmpty()
+        .withMessage('대상 언어는 필수입니다.')
+        .isLength({ min: 2, max: 5 })
+        .withMessage('언어 코드는 2-5자 사이여야 합니다.')
     ];
   }
 
-  // 뉴스 번역 검증
-  static translateNews(): ValidationChain[] {
+  static updatePreferences(): ValidationChain[] {
     return [
-      ValidationRules.id(),
-      query('lang')
+      body('defaultTargetLang')
         .optional()
-        .isIn(['ko', 'en', 'ja', 'zh', 'es', 'fr', 'de', 'ru'])
-        .withMessage('지원하지 않는 언어입니다.')
+        .isLength({ min: 2, max: 5 })
+        .withMessage('기본 대상 언어 코드는 2-5자 사이여야 합니다.'),
+      
+      body('defaultSourceLang')
+        .optional()
+        .isLength({ min: 2, max: 5 })
+        .withMessage('기본 소스 언어 코드는 2-5자 사이여야 합니다.'),
+      
+      body('autoDetectSource')
+        .optional()
+        .isBoolean()
+        .withMessage('자동 소스 언어 감지는 boolean 값이어야 합니다.')
+    ];
+  }
+
+  static cleanupCache(): ValidationChain[] {
+    return [
+      query('days')
+        .optional()
+        .isInt({ min: 1, max: 365 })
+        .withMessage('일수는 1-365 사이의 정수여야 합니다.')
     ];
   }
 }
@@ -315,9 +454,7 @@ export class UserValidation {
 
   // 키워드 삭제 검증
   static deleteKeyword(): ValidationChain[] {
-    return [
-      ValidationRules.id()
-    ];
+    return ValidationRules.id();
   }
 }
 
@@ -358,7 +495,30 @@ export const createValidationMiddleware = (validations: ValidationChain[]) => {
 
 // 자주 사용되는 검증 미들웨어 미리 생성
 export const validatePagination = createValidationMiddleware(ValidationRules.pagination());
-export const validateId = createValidationMiddleware([ValidationRules.id()]);
+export const validateId = createValidationMiddleware(ValidationRules.id());
 export const validateNewsSearch = createValidationMiddleware(NewsValidation.searchNews());
 export const validateTranslateText = createValidationMiddleware(TranslationValidation.translateText());
 export const validateTranslateBatch = createValidationMiddleware(TranslationValidation.translateBatch());
+
+// 에러 처리 개선
+const formatValidationError = (error: any): string => {
+  if (error.msg) {
+    return error.msg;
+  }
+  if (error.message) {
+    return error.message;
+  }
+  return '유효성 검증 오류가 발생했습니다.';
+};
+
+const formatValidationErrors = (errors: any[]): string => {
+  if (errors.length === 0) {
+    return '유효성 검증 오류가 발생했습니다.';
+  }
+  
+  const firstError = errors[0];
+  const field = firstError.path || firstError.location || 'field';
+  const message = formatValidationError(firstError);
+  
+  return `${field}: ${message}`;
+};

@@ -17,17 +17,18 @@ export class ResponseHelper {
   static success<T>(
     res: Response,
     data: T,
-    statusCode: number = 200,
+    message?: string,
     pagination?: PaginationMeta
   ): Response {
     const response: ApiResponse<T> = {
       success: true,
       data,
+      message,
       timestamp: new Date().toISOString(),
       ...(pagination && { pagination })
     };
 
-    return res.status(statusCode).json(response);
+    return res.status(200).json(response);
   }
 
   /**
@@ -150,7 +151,7 @@ export class ResponseHelper {
     data: T,
     message?: string
   ): Response {
-    return this.success(res, data, 201);
+    return this.success(res, data, message);
   }
 
   /**
@@ -161,7 +162,7 @@ export class ResponseHelper {
     data: T,
     message?: string
   ): Response {
-    return this.success(res, data, 200);
+    return this.success(res, data, message);
   }
 
   /**
@@ -204,7 +205,18 @@ export class ResponseHelper {
   ): Response {
     const pagination = this.createPaginationMeta(page, limit, total);
     
-    return this.success(res, data, statusCode, pagination);
+    return this.success(res, data, undefined, pagination);
+  }
+
+  /**
+   * 잘못된 요청 응답 생성
+   */
+  static badRequest(
+    res: Response,
+    message: string = '잘못된 요청입니다.',
+    details?: any
+  ): Response {
+    return this.error(res, ErrorCode.VALIDATION_ERROR, message, details);
   }
 }
 
@@ -216,7 +228,7 @@ export const sendSuccess = <T>(
   data: T,
   statusCode: number = 200,
   pagination?: PaginationMeta
-) => ResponseHelper.success(res, data, statusCode, pagination);
+) => ResponseHelper.success(res, data, undefined, pagination);
 
 export const sendError = (
   res: Response,

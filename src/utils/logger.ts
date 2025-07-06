@@ -57,9 +57,10 @@ const developmentFormat = winston.format.combine(
     }
     
     if (error) {
-      logString += `\nError: ${error.message}`;
-      if (error.stack) {
-        logString += `\nStack: ${error.stack}`;
+      const err = error as Error;
+      logString += `\nError: ${err.message || 'Unknown error'}`;
+      if (err.stack) {
+        logString += `\nStack: ${err.stack}`;
       }
     }
     

@@ -1,4 +1,5 @@
 import { NextFunction, Request, Response } from 'express';
+import { serverLogger } from './logger';
 
 /**
  * 애플리케이션 에러 타입 열거형
@@ -11,6 +12,7 @@ export enum ErrorType {
   AUTHENTICATION = 'AUTHENTICATION',
   AUTHORIZATION = 'AUTHORIZATION',
   VALIDATION = 'VALIDATION',
+  RATE_LIMIT = 'RATE_LIMIT',
   
   // 도메인 관련 오류
   TRANSLATION = 'TRANSLATION',
@@ -37,6 +39,7 @@ const errorTypeToStatusCode: Record<ErrorType, number> = {
   [ErrorType.AUTHENTICATION]: 401,
   [ErrorType.AUTHORIZATION]: 403,
   [ErrorType.VALIDATION]: 400,
+  [ErrorType.RATE_LIMIT]: 429,
   [ErrorType.TRANSLATION]: 500,
   [ErrorType.NEWS]: 500,
   [ErrorType.USER]: 400,
@@ -57,6 +60,7 @@ const userFriendlyMessages: Record<ErrorType, string> = {
   [ErrorType.AUTHENTICATION]: '로그인이 필요하거나 인증 정보가 유효하지 않습니다.',
   [ErrorType.AUTHORIZATION]: '해당 작업을 수행할 권한이 없습니다.',
   [ErrorType.VALIDATION]: '입력 데이터가 유효하지 않습니다.',
+  [ErrorType.RATE_LIMIT]: '요청 횟수가 제한을 초과했습니다. 잠시 후 다시 시도해주세요.',
   [ErrorType.TRANSLATION]: '번역 처리 중 오류가 발생했습니다.',
   [ErrorType.NEWS]: '뉴스 데이터 처리 중 오류가 발생했습니다.',
   [ErrorType.USER]: '사용자 정보 처리 중 오류가 발생했습니다.',
@@ -68,6 +72,35 @@ const userFriendlyMessages: Record<ErrorType, string> = {
 };
 
 /**
+ * 민감한 정보를 포함할 수 있는 키워드 목록
+ */
+const sensitiveKeywords = [
+  'password', 'token', 'secret', 'key', 'auth', 'credential', 'pwd', 'pw',
+  'apikey', 'api_key', 'access_token', 'refresh_token', 'private', 'cert',
+  'encryption', 'hash', 'salt', 'signature', 'jwt', 'bearer'
+];
+
+/**
+ * 민감한 경로 패턴 목록
+ */
+const sensitivePathPatterns = [
+  /\/home\/\w+\//, // 홈 디렉토리 경로
+  /C:\\Users\\[^\\]+\\/, // Windows 사용자 디렉토리
+  /\/var\/www\//, // 웹 서버 디렉토리
+  /\/app\//, // 컨테이너 앱 디렉토리
+  /\\node_modules\\/, // node_modules 경로
+  /\/node_modules\//, // node_modules 경로 (Unix)
+  /[A-Za-z]:\\Program Files\\/, // Program Files 경로
+  /\/etc\//, // 시스템 설정 디렉토리
+  /\/tmp\//, // 임시 디렉토리
+  /\/usr\//, // 시스템 디렉토리
+  /\.env/, // .env 파일
+  /config\.json/, // 설정 파일
+  /\.pem$/, // 인증서 파일
+  /\.key$/ // 키 파일
+];
+
+/**
  * 애플리케이션 표준 에러 클래스
  */
 export class AppError extends Error {
@@ -77,6 +110,7 @@ export class AppError extends Error {
   public readonly isRetryable: boolean;
   public readonly originalError?: unknown;
   public readonly context?: Record<string, unknown>;
+  public readonly errorId: string;
 
   constructor(
     type: ErrorType = ErrorType.UNKNOWN,
@@ -86,14 +120,20 @@ export class AppError extends Error {
     originalError?: unknown,
     context?: Record<string, unknown>
   ) {
-    super(message);
+    // 메시지에서 민감한 정보 필터링
+    const sanitizedMessage = sanitizeErrorMessage(message);
+    
+    super(sanitizedMessage);
     this.name = this.constructor.name;
     this.type = type;
     this.httpCode = errorTypeToStatusCode[type];
     this.isOperational = isOperational;
     this.isRetryable = isRetryable;
     this.originalError = originalError;
-    this.context = context;
+    this.context = sanitizeErrorContext(context);
+    
+    // 고유한 에러 ID 생성 (추적용)
+    this.errorId = generateErrorId();
     
     // 스택 트레이스 캡처 (Node.js에서 Error 객체 확장 시 필요)
     Error.captureStackTrace(this, this.constructor);
@@ -107,18 +147,31 @@ export class AppError extends Error {
   }
 
   /**
-   * 오류 객체를 JSON으로 변환
+   * 오류 객체를 JSON으로 변환 (클라이언트 응답용)
    */
-  public toJSON(): Record<string, unknown> {
+  public toJSON(includeDetails: boolean = false): Record<string, unknown> {
+    const baseError = {
+      type: this.type,
+      message: includeDetails ? this.message : this.getUserFriendlyMessage(),
+      httpCode: this.httpCode,
+      isRetryable: this.isRetryable,
+      errorId: this.errorId
+    };
+    
+    // 개발 환경이거나 상세 정보 포함 옵션이 켜져 있는 경우에만 추가 정보 포함
+    if (includeDetails && process.env.NODE_ENV !== 'production') {
+      return {
+        success: false,
+        error: {
+          ...baseError,
+          context: this.context
+        }
+      };
+    }
+    
     return {
       success: false,
-      error: {
-        type: this.type,
-        message: this.message,
-        httpCode: this.httpCode,
-        isRetryable: this.isRetryable,
-        context: this.context
-      }
+      error: baseError
     };
   }
 
@@ -150,6 +203,9 @@ export class AppError extends Error {
         errorType = ErrorType.AUTHORIZATION;
       } else if (message.includes('validation') || message.includes('invalid') || message.includes('required')) {
         errorType = ErrorType.VALIDATION;
+      } else if (message.includes('rate limit') || message.includes('too many requests') || message.includes('429')) {
+        errorType = ErrorType.RATE_LIMIT;
+        isRetryable = true;
       } else if (message.includes('not found') || message.includes('404')) {
         errorType = ErrorType.NOT_FOUND;
       } else if (message.includes('translate') || message.includes('google')) {
@@ -160,12 +216,18 @@ export class AppError extends Error {
         isRetryable = true;
       }
       
+      // 민감한 정보가 포함된 스택 트레이스 정리
+      const sanitizedError = new Error(sanitizeErrorMessage(error.message));
+      if (error.stack) {
+        sanitizedError.stack = sanitizeStackTrace(error.stack);
+      }
+      
       return new AppError(
         errorType,
         error.message,
         true,
         isRetryable,
-        error
+        sanitizedError
       );
     }
     
@@ -173,7 +235,7 @@ export class AppError extends Error {
     if (typeof error === 'string') {
       return new AppError(
         defaultType,
-        error,
+        sanitizeErrorMessage(error),
         true,
         false
       );
@@ -191,9 +253,128 @@ export class AppError extends Error {
 }
 
 /**
+ * 에러 메시지에서 민감한 정보 제거
+ * @param message 원본 에러 메시지
+ * @returns 민감한 정보가 제거된 메시지
+ */
+function sanitizeErrorMessage(message: string): string {
+  if (!message) return message;
+  
+  let sanitized = message;
+  
+  // 민감한 키워드 치환
+  sensitiveKeywords.forEach(keyword => {
+    const regex = new RegExp(`(${keyword}\\s*[=:]\\s*["']?)[^"'\\s&;)]*["']?`, 'gi');
+    sanitized = sanitized.replace(regex, `$1[REDACTED]`);
+  });
+  
+  // 파일 경로 치환
+  sensitivePathPatterns.forEach(pattern => {
+    sanitized = sanitized.replace(pattern, '[PATH]/');
+  });
+  
+  // SQL 쿼리 치환
+  sanitized = sanitized.replace(/SELECT\s+.*?\s+FROM/gi, 'SELECT [FIELDS] FROM');
+  
+  // 이메일 주소 마스킹
+  sanitized = sanitized.replace(/[\w.-]+@[\w.-]+\.\w+/g, '[EMAIL]');
+  
+  // IP 주소 마스킹
+  sanitized = sanitized.replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, '[IP]');
+  
+  return sanitized;
+}
+
+/**
+ * 에러 컨텍스트에서 민감한 정보 제거
+ * @param context 원본 컨텍스트 객체
+ * @returns 민감한 정보가 제거된 컨텍스트 객체
+ */
+function sanitizeErrorContext(context?: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (!context) return context;
+  
+  const sanitized: Record<string, unknown> = {};
+  
+  for (const [key, value] of Object.entries(context)) {
+    // 민감한 키인 경우 값 마스킹
+    const isKeywordSensitive = sensitiveKeywords.some(keyword => 
+      key.toLowerCase().includes(keyword.toLowerCase())
+    );
+    
+    if (isKeywordSensitive) {
+      sanitized[key] = '[REDACTED]';
+    }
+    // 객체인 경우 재귀적으로 처리
+    else if (typeof value === 'object' && value !== null) {
+      sanitized[key] = sanitizeErrorContext(value as Record<string, unknown>);
+    }
+    // 문자열인 경우 민감한 정보 필터링
+    else if (typeof value === 'string') {
+      sanitized[key] = sanitizeErrorMessage(value);
+    }
+    // 그 외 경우 그대로 유지
+    else {
+      sanitized[key] = value;
+    }
+  }
+  
+  return sanitized;
+}
+
+/**
+ * 스택 트레이스에서 민감한 정보 제거
+ * @param stack 원본 스택 트레이스
+ * @returns 민감한 정보가 제거된 스택 트레이스
+ */
+function sanitizeStackTrace(stack: string): string {
+  if (!stack) return stack;
+  
+  let sanitized = stack;
+  
+  // 파일 경로 치환
+  sensitivePathPatterns.forEach(pattern => {
+    sanitized = sanitized.replace(pattern, '[PATH]/');
+  });
+  
+  // 절대 경로를 상대 경로로 변환
+  sanitized = sanitized.replace(/(at\s+[\w.<>]+\s+\()([^:)]+)(:\d+:\d+\))/g, (match, prefix, path, suffix) => {
+    // src/ 디렉토리 이하만 표시
+    const srcIndex = path.indexOf('/src/');
+    if (srcIndex !== -1) {
+      return `${prefix}${path.substring(srcIndex + 1)}${suffix}`;
+    }
+    
+    // node_modules는 모듈 이름만 표시
+    const nodeModulesIndex = path.indexOf('node_modules/');
+    if (nodeModulesIndex !== -1) {
+      const modulePath = path.substring(nodeModulesIndex + 13);
+      const firstSlash = modulePath.indexOf('/');
+      if (firstSlash !== -1) {
+        const moduleName = modulePath.substring(0, firstSlash);
+        return `${prefix}[module:${moduleName}]${suffix}`;
+      }
+    }
+    
+    return `${prefix}[path]${suffix}`;
+  });
+  
+  return sanitized;
+}
+
+/**
+ * 고유한 에러 ID 생성
+ * @returns 고유한 에러 ID
+ */
+function generateErrorId(): string {
+  const timestamp = Date.now().toString(36);
+  const randomPart = Math.random().toString(36).substring(2, 8);
+  return `err_${timestamp}_${randomPart}`;
+}
+
+/**
  * 글로벌 오류 처리 미들웨어
  */
-export function globalErrorHandler(
+export function errorHandler(
   err: Error | AppError,
   req: Request,
   res: Response,
@@ -206,30 +387,50 @@ export function globalErrorHandler(
   
   // 로깅 (운영 환경에서는 비운영 오류만 자세히 로깅)
   if (process.env.NODE_ENV === 'production' && !appError.isOperational) {
-    console.error('[심각] 비운영 오류 발생:', err);
+    serverLogger.error('[심각] 비운영 오류 발생:', { 
+      errorId: appError.errorId,
+      type: appError.type,
+      message: appError.message,
+      path: req.path,
+      method: req.method
+    });
   } else {
-    console.error(`[오류] ${appError.type}:`, appError.message);
+    const logLevel = appError.type === ErrorType.RATE_LIMIT ? 'warn' : 'error';
+    serverLogger[logLevel](`[오류] ${appError.type}:`, { 
+      errorId: appError.errorId,
+      message: appError.message,
+      path: req.path,
+      method: req.method,
+      ip: req.ip,
+      userId: req.user?.id
+    });
     
-    if (appError.originalError) {
-      console.error('원본 오류:', appError.originalError);
+    if (appError.originalError && process.env.NODE_ENV !== 'production') {
+      serverLogger.debug('원본 오류:', { originalError: appError.originalError });
     }
     
     if (appError.context) {
-      console.error('컨텍스트:', appError.context);
+      serverLogger.debug('컨텍스트:', { context: appError.context });
     }
   }
   
-  // 클라이언트 응답
-  res.status(appError.httpCode).json({
-    success: false,
-    error: {
-      type: appError.type,
-      message: process.env.NODE_ENV === 'production' 
-        ? appError.getUserFriendlyMessage() 
-        : appError.message,
-      isRetryable: appError.isRetryable
-    }
-  });
+  // 클라이언트 응답 준비
+  const includeDetails = process.env.NODE_ENV !== 'production';
+  const responseBody = appError.toJSON(includeDetails);
+  
+  // Rate Limit 오류인 경우 추가 정보 제공
+  if (appError.type === ErrorType.RATE_LIMIT && appError.context) {
+    responseBody.error = {
+      ...responseBody.error,
+      retryAfter: appError.context.retryAfter,
+      limit: appError.context.limit
+    };
+  }
+  
+  // 응답 전송
+  if (!res.headersSent) {
+    res.status(appError.httpCode).json(responseBody);
+  }
 }
 
 /**

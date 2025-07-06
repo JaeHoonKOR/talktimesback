@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { NextFunction, Request, Response, Router } from 'express';
 import * as newsController from '../controllers/news.controller';
 import * as newsControllerV2 from '../controllers/news.controller.v2';
 import { authMiddleware, requireAdmin } from '../middlewares/auth.middleware';
@@ -20,7 +20,7 @@ const router = Router();
  * /api/v2/news:
  *   get:
  *     summary: 뉴스 목록 조회 (RESTful)
- *     description: 검색, 필터링, 개인화, 페이지네이션을 지원하는 통합 뉴스 목록 조회
+ *     description: 검색, 필터링, 개인화, 커서 기반 페이지네이션을 지원하는 통합 뉴스 목록 조회
  *     tags: [News v2]
  *     parameters:
  *       - in: query
@@ -47,12 +47,10 @@ const router = Router();
  *           default: false
  *         description: 개인화 뉴스 여부 (인증 필요)
  *       - in: query
- *         name: page
+ *         name: cursor
  *         schema:
- *           type: integer
- *           minimum: 1
- *           default: 1
- *         description: 페이지 번호
+ *           type: string
+ *         description: 페이지네이션 커서
  *       - in: query
  *         name: limit
  *         schema:
@@ -80,7 +78,17 @@ const router = Router();
  *                       items:
  *                         $ref: '#/components/schemas/NewsItem'
  *                     pagination:
- *                       $ref: '#/components/schemas/PaginationMeta'
+ *                       type: object
+ *                       properties:
+ *                         nextCursor:
+ *                           type: string
+ *                           description: 다음 페이지 커서
+ *                         hasNextPage:
+ *                           type: boolean
+ *                           description: 다음 페이지 존재 여부
+ *                         count:
+ *                           type: integer
+ *                           description: 현재 페이지 항목 수
  *                 timestamp:
  *                   type: string
  *                   format: date-time
@@ -93,8 +101,8 @@ const router = Router();
  */
 router.get('/', 
   rateLimiter({ points: 100, duration: 60 }), // 분당 100회
-  createValidationMiddleware(NewsValidation.getNewsList()),
-  async (req, res, next) => {
+  createValidationMiddleware(NewsValidation.getNewsListCursor()),
+  async (req: Request, res: Response, next: NextFunction) => {
     const { personalized } = req.query;
     
     // 개인화 요청인 경우 인증 필요

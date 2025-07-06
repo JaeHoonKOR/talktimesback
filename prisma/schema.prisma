@@ -1,98 +1,83 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
 
-// 사용자 테이블
 model User {
-  id             Int       @id @default(autoincrement())
-  kakaoId        String?   @unique // 카카오톡 ID
-  email          String?   @unique // 이메일 (웹 로그인용)
-  password       String?   // 비밀번호 (웹 로그인용)
-  name           String?   // 이름
-  provider       String?   // 소셜 로그인 제공자 (kakao, google, naver)
-  profileImage   String?   // 프로필 이미지 URL
-  preferredTime  String    @default("08:00") // 선호 발송 시간
-  language       String    @default("ko")    // 사용자 선호 언어 추가
-  createdAt      DateTime  @default(now())   // 생성 시간
-  updatedAt      DateTime  @updatedAt        // 업데이트 시간
-  
-  // 관계 설정
-  keywords       Keyword[]   // 사용자의 관심 키워드
-  newsLogs       NewsLog[]   // 사용자에게 발송된 뉴스 로그
-  userPreference UserPreference? // 사용자 환경설정
+  id             Int             @id @default(autoincrement())
+  kakaoId        String?         @unique
+  email          String?         @unique
+  password       String?
+  name           String?
+  provider       String?
+  profileImage   String?
+  preferredTime  String          @default("08:00")
+  language       String          @default("ko")
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  keywords       Keyword[]
+  newsLogs       NewsLog[]
+  userPreference UserPreference?
 }
 
-// 사용자 환경설정
 model UserPreference {
-  id           Int     @id @default(autoincrement())
-  userId       Int     @unique
-  user         User    @relation(fields: [userId], references: [id])
-  
-  // 알림 설정
-  enableNotification Boolean @default(true)  // 알림 활성화 여부
-  
-  // 콘텐츠 설정
-  contentLength     String  @default("medium") // short, medium, long
-  includeImages     Boolean @default(true)     // 이미지 포함 여부
-  includeVideos     Boolean @default(false)    // 비디오 포함 여부
-  
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                 Int      @id @default(autoincrement())
+  userId             Int      @unique
+  enableNotification Boolean  @default(true)
+  contentLength      String   @default("medium")
+  includeImages      Boolean  @default(true)
+  includeVideos      Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  user               User     @relation(fields: [userId], references: [id])
 }
 
-// 키워드 테이블
 model Keyword {
   id        Int      @id @default(autoincrement())
-  userId    Int      // 사용자 ID
+  userId    Int
+  keyword   String
+  category  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
   user      User     @relation(fields: [userId], references: [id])
-  keyword   String   // 키워드 내용
-  category  String?  // 키워드 카테고리 (태그)
+
+  @@index([userId, keyword])
+}
+
+model NewsLog {
+  id            Int       @id @default(autoincrement())
+  userId        Int
+  url           String
+  title         String
+  summary       String
+  source        String
+  category      String
+  imageUrl      String?
+  sentAt        DateTime  @default(now())
+  readAt        DateTime?
+  clickedAt     DateTime?
+  feedbackScore Int?
+  user          User      @relation(fields: [userId], references: [id])
+
+  @@index([userId, category])
+}
+
+model NewsSource {
+  id        Int      @id @default(autoincrement())
+  name      String
+  url       String
+  category  String
+  type      String
+  active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([userId, keyword]) // 인덱스 추가
-}
-
-// 뉴스 로그 테이블
-model NewsLog {
-  id          Int       @id @default(autoincrement())
-  userId      Int       // 사용자 ID
-  user        User      @relation(fields: [userId], references: [id])
-  url         String    // 뉴스 URL
-  title       String    // 뉴스 제목
-  summary     String    // 요약 내용
-  source      String    // 뉴스 출처
-  category    String    // 뉴스 카테고리
-  imageUrl    String?   // 뉴스 이미지 URL
-  sentAt      DateTime  @default(now()) // 발송 시간
-  readAt      DateTime? // 읽은 시간
-  clickedAt   DateTime? // 클릭 시간
-  feedbackScore Int?     // 피드백 점수
-  
-  @@index([userId, category]) // 인덱스 추가
-}
-
-// 뉴스 소스 테이블
-model NewsSource {
-  id          Int      @id @default(autoincrement())
-  name        String   // 소스 이름
-  url         String   // 소스 URL
-  category    String   // 카테고리
-  type        String   // rss, api, scrape
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
-  @@index([category, active]) // 인덱스 추가
+  @@index([category, active])
 }
 
 model News {
@@ -103,37 +88,165 @@ model News {
   sourceId    String
   category    String
   publishedAt DateTime
-  excerpt     String   @db.Text
-  content     String?  @db.Text
+  excerpt     String
+  content     String?
   imageUrl    String?
   isProcessed Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([category])
+  @@index([source])
+  @@index([publishedAt])
+  @@index([isProcessed])
+  @@index([createdAt])
 }
 
 model NewsSummary {
-  id             String   @id @default(uuid())
-  originalNewsIds String[] 
-  category       String
-  title          String
-  summary        String   @db.Text
-  keywords       String[]
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id              String   @id @default(uuid())
+  originalNewsIds String[]
+  category        String
+  title           String
+  summary         String
+  keywords        String[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([category])
+  @@index([keywords])
+  @@index([createdAt])
 }
 
-// 번역 캐싱을 위한 Translation 모델
 model Translation {
-  id            String   @id @default(uuid())
-  sourceText    String   @db.Text
-  targetLang    String
-  translatedText String  @db.Text
-  usageCount    Int      @default(1)
-  lastUsedAt    DateTime @default(now())
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id             String   @id @default(uuid())
+  sourceText     String
+  targetLang     String
+  translatedText String
+  usageCount     Int      @default(1)
+  lastUsedAt     DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   @@unique([sourceText, targetLang])
   @@index([sourceText, targetLang])
   @@index([lastUsedAt])
+}
+
+model RefreshToken {
+  id         Int       @id @default(autoincrement())
+  token_hash String    @unique
+  user_id    String    @db.VarChar(255)
+  session_id String    @db.VarChar(255)
+  expires_at DateTime  @db.Timestamptz(6)
+  is_revoked Boolean?  @default(false)
+  revoked_at DateTime? @db.Timestamptz(6)
+  created_at DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([expires_at], map: "idx_refresh_tokens_expires_at")
+  @@index([is_revoked], map: "idx_refresh_tokens_is_revoked")
+  @@index([session_id], map: "idx_refresh_tokens_session_id")
+  @@index([token_hash], map: "idx_refresh_tokens_token_hash")
+  @@index([user_id], map: "idx_refresh_tokens_user_id")
+  @@map("refresh_tokens")
+}
+
+model TokenBlacklist {
+  id             Int       @id @default(autoincrement())
+  jti            String    @unique @db.VarChar(255)
+  token_hash     String    @db.VarChar(64)
+  user_id        String    @db.VarChar(255)
+  reason         String    @default("알 수 없음") @db.VarChar(500)
+  blacklisted_at DateTime? @default(now()) @db.Timestamptz(6)
+  expires_at     DateTime  @db.Timestamptz(6)
+  created_at     DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([expires_at], map: "idx_token_blacklist_expires_at")
+  @@index([jti], map: "idx_token_blacklist_jti")
+  @@index([token_hash], map: "idx_token_blacklist_token_hash")
+  @@index([user_id], map: "idx_token_blacklist_user_id")
+  @@map("token_blacklist")
+}
+
+model UserSecuritySettings {
+  id                      Int       @id @default(autoincrement())
+  user_id                 String    @unique @db.VarChar(255)
+  two_factor_enabled      Boolean?  @default(false)
+  two_factor_secret       String?   @db.VarChar(255)
+  backup_codes            String[]
+  login_notifications     Boolean?  @default(true)
+  session_timeout_minutes Int?      @default(1440)
+  max_concurrent_sessions Int?      @default(5)
+  last_password_change    DateTime? @db.Timestamptz(6)
+  password_expires_at     DateTime? @db.Timestamptz(6)
+  account_locked_until    DateTime? @db.Timestamptz(6)
+  failed_login_count      Int?      @default(0)
+  created_at              DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([account_locked_until], map: "idx_user_security_account_locked")
+  @@index([user_id], map: "idx_user_security_user_id")
+  @@map("user_security_settings")
+}
+
+model ActiveSession {
+  id            Int       @id @default(autoincrement())
+  session_id    String    @unique @db.VarChar(255)
+  user_id       String    @db.VarChar(255)
+  device_info   Json?
+  ip_address    String    @db.Inet
+  user_agent    String?
+  location      Json?
+  last_activity DateTime? @default(now()) @db.Timestamptz(6)
+  expires_at    DateTime  @db.Timestamptz(6)
+  is_active     Boolean?  @default(true)
+  created_at    DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([expires_at], map: "idx_active_sessions_expires_at")
+  @@index([is_active], map: "idx_active_sessions_is_active")
+  @@index([last_activity], map: "idx_active_sessions_last_activity")
+  @@index([session_id], map: "idx_active_sessions_session_id")
+  @@index([user_id], map: "idx_active_sessions_user_id")
+  @@map("active_sessions")
+}
+
+model login_attempts {
+  id              Int       @id @default(autoincrement())
+  identifier      String    @db.VarChar(255)
+  identifier_type String    @db.VarChar(50)
+  attempt_type    String    @db.VarChar(50)
+  success         Boolean
+  user_id         String?   @db.VarChar(255)
+  ip_address      String?   @db.Inet
+  user_agent      String?
+  error_message   String?
+  attempted_at    DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([attempted_at], map: "idx_login_attempts_attempted_at")
+  @@index([identifier], map: "idx_login_attempts_identifier")
+  @@index([identifier_type], map: "idx_login_attempts_identifier_type")
+  @@index([ip_address], map: "idx_login_attempts_ip_address")
+  @@index([success], map: "idx_login_attempts_success")
+}
+
+model security_events {
+  id          Int       @id @default(autoincrement())
+  event_type  String    @db.VarChar(100)
+  severity    String    @db.VarChar(20)
+  user_id     String?   @db.VarChar(255)
+  ip_address  String?   @db.Inet
+  user_agent  String?
+  description String
+  metadata    Json?
+  resolved    Boolean?  @default(false)
+  resolved_at DateTime? @db.Timestamptz(6)
+  resolved_by String?   @db.VarChar(255)
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([created_at], map: "idx_security_events_created_at")
+  @@index([event_type], map: "idx_security_events_event_type")
+  @@index([resolved], map: "idx_security_events_resolved")
+  @@index([severity], map: "idx_security_events_severity")
+  @@index([user_id], map: "idx_security_events_user_id")
 }

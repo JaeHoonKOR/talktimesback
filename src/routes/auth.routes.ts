@@ -3,7 +3,8 @@ import axios from 'axios';
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import passport from 'passport';
-import { login, signup } from '../controllers/auth.controller';
+import { getSessions, login, logout, logoutFromAllDevices, refreshToken, signup } from '../controllers/auth.controller';
+import { authMiddleware } from '../middlewares/auth.middleware';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -27,8 +28,15 @@ const deprecatedWarning = (req: any, res: any, next: any) => {
 // 모든 라우트에 deprecated 경고 적용
 router.use(deprecatedWarning);
 
+// 기본 인증 엔드포인트
 router.post('/signup', signup);
 router.post('/login', login);
+
+// 새로운 보안 강화 엔드포인트들
+router.post('/logout', authMiddleware, logout);
+router.post('/refresh-token', refreshToken);
+router.get('/sessions', authMiddleware, getSessions);
+router.post('/logout-all-devices', authMiddleware, logoutFromAllDevices);
 
 // 테스트 라우트
 router.get('/test', (req, res) => {
@@ -57,9 +65,13 @@ router.get(
       
       // JWT 토큰 생성
       const token = jwt.sign(
-        { userId: user.id },
+        { 
+          id: user.id, 
+          email: user.email, 
+          role: user.role || 'user' 
+        },
         process.env.JWT_SECRET!,
-        { expiresIn: process.env.JWT_EXPIRES_IN }
+        { expiresIn: '24h' }
       );
 
       // 프론트엔드로 리다이렉트 (토큰과 함께)
@@ -75,15 +87,12 @@ router.get(
 router.get('/google', (req, res) => {
   const googleAuthUrl = 'https://accounts.google.com/o/oauth2/v2/auth';
   const options = {
-    redirect_uri: process.env.GOOGLE_REDIRECT_URI,
-    client_id: process.env.GOOGLE_CLIENT_ID,
+    redirect_uri: process.env.GOOGLE_REDIRECT_URI || '',
+    client_id: process.env.GOOGLE_CLIENT_ID || '',
     access_type: 'offline',
     response_type: 'code',
     prompt: 'consent',
-    scope: [
-      'https://www.googleapis.com/auth/userinfo.profile',
-      'https://www.googleapis.com/auth/userinfo.email',
-    ].join(' '),
+    scope: 'openid email profile'
   };
 
   const qs = new URLSearchParams(options);

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { param } from 'express-validator';
 import * as newsController from '../controllers/news.controller';
 import { authMiddleware } from '../middlewares/auth.middleware';
 import {
@@ -116,7 +117,11 @@ router.post('/fetch',
 router.post('/categories/:category/fetch',
   authMiddleware, // 관리자 권한 필요
   createValidationMiddleware([
-    ValidationRules.id('category').withMessage('유효한 카테고리가 아닙니다.')
+    param('category')
+      .notEmpty()
+      .withMessage('카테고리는 필수입니다.')
+      .isIn(['politics', 'economy', 'society', 'culture', 'world', 'sports', 'entertainment', 'tech'])
+      .withMessage('유효한 카테고리가 아닙니다.')
   ]),
   newsController.fetchAndSaveNewsByCategory
 );

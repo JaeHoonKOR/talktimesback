@@ -116,7 +116,7 @@ export function ensureJWTSecret(): string {
   
   // 환경 변수에 없으면 .env 파일에서 확인
   if (!jwtSecret) {
-    jwtSecret = readEnvValue(envPath, 'JWT_SECRET');
+    jwtSecret = readEnvValue(envPath, 'JWT_SECRET') || undefined;
   }
 
   // JWT_SECRET이 없거나 안전하지 않으면 새로 생성

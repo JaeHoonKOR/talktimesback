@@ -29,6 +29,7 @@ export interface NewsItem {
   excerpt: string;
   content?: string;
   imageUrl?: string;
+  aiSummary?: string;
   isProcessed: boolean;
   createdAt?: Date;
   updatedAt?: Date;

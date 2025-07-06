@@ -6,6 +6,7 @@
 export interface ApiResponse<T = any> {
   success: boolean;
   data?: T;
+  message?: string;
   error?: ApiError;
   pagination?: PaginationMeta;
   timestamp: string;
@@ -171,6 +172,7 @@ export enum ErrorCode {
   // 일반 오류
   UNKNOWN_ERROR = 'UNKNOWN_ERROR',
   INTERNAL_SERVER_ERROR = 'INTERNAL_SERVER_ERROR',
+  SYSTEM_ERROR = 'SYSTEM_ERROR',
   
   // 인증/권한 오류
   UNAUTHORIZED = 'UNAUTHORIZED',
@@ -203,6 +205,7 @@ export enum ErrorCode {
 export const ErrorCodeToHttpStatus: Record<ErrorCode, number> = {
   [ErrorCode.UNKNOWN_ERROR]: 500,
   [ErrorCode.INTERNAL_SERVER_ERROR]: 500,
+  [ErrorCode.SYSTEM_ERROR]: 500,
   [ErrorCode.UNAUTHORIZED]: 401,
   [ErrorCode.FORBIDDEN]: 403,
   [ErrorCode.TOKEN_EXPIRED]: 401,

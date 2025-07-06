@@ -79,7 +79,7 @@ router.post('/public',
   rateLimiter({ 
     points: 10, 
     duration: 60,
-    keyGenerator: (req) => req.ip // IP 기반 제한
+    keyGenerator: (req) => req.ip || 'unknown' // IP 기반 제한
   }),
   createValidationMiddleware([
     ...TranslationValidation.translateText(),
@@ -99,7 +99,7 @@ router.post('/public',
  */
 router.get('/users/:userId/preferences',
   authMiddleware,
-  createValidationMiddleware(ValidationRules.id('userId')),
+  createValidationMiddleware([...ValidationRules.id('userId')]),
   translationController.getUserTranslationPreferences
 );
 
@@ -110,8 +110,8 @@ router.get('/users/:userId/preferences',
 router.put('/users/:userId/preferences',
   authMiddleware,
   createValidationMiddleware([
-    ValidationRules.id('userId'),
-    TranslationValidation.updatePreferences()
+    ...ValidationRules.id('userId'),
+    ...TranslationValidation.updatePreferences()
   ]),
   translationController.updateUserTranslationPreferences
 );
@@ -148,7 +148,7 @@ router.delete('/cache',
 router.delete('/cache/languages/:lang',
   authMiddleware,
   requireAuth(['admin']),
-  createValidationMiddleware(ValidationRules.languageCode()),
+  createValidationMiddleware([ValidationRules.languageCode()]),
   translationController.clearLanguageTranslationCache
 );
 

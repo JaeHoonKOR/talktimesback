@@ -131,7 +131,7 @@ export class SupabaseConnectionChecker {
       return {
         success: true,
         tables: tables,
-        count: tables.length
+        count: Array.isArray(tables) ? tables.length : 0
       };
     } catch (error) {
       console.error('테이블 목록 조회 실패:', error);

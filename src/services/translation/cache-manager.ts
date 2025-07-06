@@ -160,7 +160,7 @@ export class TranslationCacheManager {
             usageCount: 'desc'
           }
         }
-      });
+      } as any);
     } catch (error) {
       console.error('언어별 사용량 조회 중 오류:', error);
       return [];

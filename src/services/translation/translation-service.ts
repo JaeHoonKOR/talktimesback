@@ -96,14 +96,16 @@ export class TranslationService {
   private async saveTranslationToCache(
     sourceText: string, 
     targetLang: string, 
-    translatedText: string
+    translatedText: string,
+    userId?: string
   ): Promise<void> {
     try {
       await prisma.translation.create({
         data: {
           sourceText,
           targetLang,
-          translatedText
+          translatedText,
+          userId
         }
       });
     } catch (error) {
@@ -115,7 +117,7 @@ export class TranslationService {
   /**
    * 텍스트 번역 (캐시 우선)
    */
-  async translateText(text: string, targetLang: string): Promise<string> {
+  async translateText(text: string, targetLang: string, sourceLang?: string, userId?: string): Promise<string> {
     if (!text || text.trim() === '') {
       return text;
     }
@@ -144,9 +146,9 @@ export class TranslationService {
       console.log(`새로운 번역 수행: ${text.substring(0, 50)}...`);
       translatedText = await this.translateWithAPI(text, targetLang);
 
-      // 3. 캐시에 저장 시도
+      // 3. 캐시에 저장 시도 (userId 포함)
       try {
-        await this.saveTranslationToCache(text, targetLang, translatedText);
+        await this.saveTranslationToCache(text, targetLang, translatedText, userId);
       } catch (saveError) {
         // 캐시 저장 실패는 무시
         console.warn('캐시 저장 실패 (무시됨):', saveError);
@@ -193,11 +195,13 @@ export class TranslationService {
         ...news,
         title: translatedTitle,
         excerpt: translatedExcerpt,
-        content: translatedContent,
+        content: translatedContent || undefined,
+        imageUrl: news.imageUrl || undefined,
+        aiSummary: news.aiSummary || undefined,
+        translatedLang: targetLang,
         originalTitle: news.title,
         originalExcerpt: news.excerpt,
-        originalContent: news.content || undefined,
-        translatedLang: targetLang
+        originalContent: news.content || undefined
       };
     } catch (error) {
       console.error('뉴스 번역 중 오류:', error);
@@ -206,37 +210,21 @@ export class TranslationService {
   }
 
   /**
-   * 배치 번역 처리
+   * 배치 번역
    */
-  async translateBatch(texts: string[], targetLang: string): Promise<string[]> {
+  async translateBatch(texts: string[], targetLang: string, sourceLang?: string, userId?: string): Promise<string[]> {
+    if (!Array.isArray(texts) || texts.length === 0) {
+      return [];
+    }
+
     try {
-      // 1. 캐시된 번역 먼저 조회
-      const cacheResults = await prisma.translation.findMany({
-        where: {
-          sourceText: { in: texts },
-          targetLang
-        }
-      });
-
-      // 2. 캐시되지 않은 텍스트만 추출
-      const cachedMap = new Map(cacheResults.map(r => [r.sourceText, r.translatedText]));
-      const uncachedTexts = texts.filter(text => !cachedMap.has(text));
-
-      // 3. 새로운 번역 수행
-      const newTranslations = await Promise.all(
-        uncachedTexts.map(text => this.translateText(text, targetLang))
+      const translations = await Promise.all(
+        texts.map(text => this.translateText(text, targetLang, sourceLang, userId))
       );
-
-      // 4. 결과 조합
-      return texts.map(text => {
-        const cached = cachedMap.get(text);
-        if (cached) return cached;
-        
-        const index = uncachedTexts.indexOf(text);
-        return index >= 0 ? newTranslations[index] : text;
-      });
+      
+      return translations;
     } catch (error) {
-      console.error('배치 번역 중 오류:', error);
+      console.error('배치 번역 중 오류 발생:', error);
       return texts; // 실패 시 원본 텍스트 배열 반환
     }
   }
@@ -272,6 +260,219 @@ export class TranslationService {
     } catch (error) {
       console.error('뉴스 목록 번역 중 오류:', error);
       return newsList as TranslatedNewsItem[];
+    }
+  }
+
+  /**
+   * 번역 ID로 번역 조회
+   */
+  async getTranslationById(id: string): Promise<Translation | null> {
+    try {
+      return await prisma.translation.findUnique({
+        where: { id }
+      });
+    } catch (error) {
+      console.error('번역 조회 중 오류:', error);
+      return null;
+    }
+  }
+
+  /**
+   * 사용자 번역 히스토리 조회
+   */
+  async getUserTranslationHistory(userId: string, page: number = 1, limit: number = 20): Promise<{
+    translations: Translation[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    try {
+      const offset = (page - 1) * limit;
+      
+      const [translations, total] = await Promise.all([
+        prisma.translation.findMany({
+          where: { userId },
+          orderBy: { createdAt: 'desc' },
+          skip: offset,
+          take: limit
+        }),
+        prisma.translation.count({
+          where: { userId }
+        })
+      ]);
+
+      return {
+        translations,
+        total,
+        page,
+        limit
+      };
+    } catch (error) {
+      console.error('사용자 번역 히스토리 조회 중 오류:', error);
+      return {
+        translations: [],
+        total: 0,
+        page,
+        limit
+      };
+    }
+  }
+
+  /**
+   * 번역 삭제
+   */
+  async deleteTranslation(id: string, userId: string): Promise<boolean> {
+    try {
+      const translation = await prisma.translation.findUnique({
+        where: { id }
+      });
+
+      if (!translation) {
+        return false;
+      }
+
+      // 사용자 권한 확인 (본인 또는 관리자만)
+      if (translation.userId !== userId) {
+        return false;
+      }
+
+      await prisma.translation.delete({
+        where: { id }
+      });
+
+      return true;
+    } catch (error) {
+      console.error('번역 삭제 중 오류:', error);
+      return false;
+    }
+  }
+
+  /**
+   * 사용자 번역 설정 조회
+   */
+  async getUserPreferences(userId: string): Promise<any> {
+    try {
+      // 임시 구현 - 실제로는 UserPreferences 모델이 필요
+      return {
+        userId,
+        defaultTargetLang: 'en',
+        defaultSourceLang: 'ko',
+        autoDetectSource: true,
+        preferredTranslationEngine: 'google',
+        saveTranslationHistory: true
+      };
+    } catch (error) {
+      console.error('사용자 번역 설정 조회 중 오류:', error);
+      return null;
+    }
+  }
+
+  /**
+   * 사용자 번역 설정 업데이트
+   */
+  async updateUserPreferences(userId: string, preferences: any): Promise<any> {
+    try {
+      // 임시 구현 - 실제로는 UserPreferences 모델이 필요
+      return {
+        userId,
+        ...preferences,
+        updatedAt: new Date()
+      };
+    } catch (error) {
+      console.error('사용자 번역 설정 업데이트 중 오류:', error);
+      return null;
+    }
+  }
+
+  /**
+   * 번역 통계 조회
+   */
+  async getTranslationStatistics(startDate?: string, endDate?: string): Promise<any> {
+    try {
+      const whereClause: any = {};
+      
+      if (startDate || endDate) {
+        whereClause.createdAt = {};
+        if (startDate) whereClause.createdAt.gte = new Date(startDate);
+        if (endDate) whereClause.createdAt.lte = new Date(endDate);
+      }
+
+      const [totalTranslations, uniqueUsers, languageStats] = await Promise.all([
+        prisma.translation.count({ where: whereClause }),
+        prisma.translation.findMany({
+          where: whereClause,
+          select: { userId: true },
+          distinct: ['userId']
+        }),
+        prisma.translation.groupBy({
+          by: ['targetLang'],
+          _count: { id: true },
+          where: whereClause,
+          orderBy: { _count: { id: 'desc' } }
+        })
+      ]);
+
+      return {
+        totalTranslations,
+        uniqueUsers: uniqueUsers.length,
+        languageStats: languageStats.map(stat => ({
+          language: stat.targetLang,
+          count: stat._count.id
+        })),
+        period: {
+          startDate: startDate || null,
+          endDate: endDate || null
+        }
+      };
+    } catch (error) {
+      console.error('번역 통계 조회 중 오류:', error);
+      return {
+        totalTranslations: 0,
+        uniqueUsers: 0,
+        languageStats: [],
+        period: { startDate: null, endDate: null }
+      };
+    }
+  }
+
+  /**
+   * 언어별 번역 통계 조회
+   */
+  async getLanguageStatistics(startDate?: string, endDate?: string): Promise<any> {
+    try {
+      const whereClause: any = {};
+      
+      if (startDate || endDate) {
+        whereClause.createdAt = {};
+        if (startDate) whereClause.createdAt.gte = new Date(startDate);
+        if (endDate) whereClause.createdAt.lte = new Date(endDate);
+      }
+
+      const languageStats = await prisma.translation.groupBy({
+        by: ['targetLang'],
+        _count: { id: true },
+        _sum: { usageCount: true },
+        where: whereClause,
+        orderBy: { _count: { id: 'desc' } }
+      });
+
+      return {
+        languages: languageStats.map(stat => ({
+          language: stat.targetLang,
+          translationCount: stat._count.id,
+          totalUsage: stat._sum.usageCount || 0
+        })),
+        period: {
+          startDate: startDate || null,
+          endDate: endDate || null
+        }
+      };
+    } catch (error) {
+      console.error('언어별 번역 통계 조회 중 오류:', error);
+      return {
+        languages: [],
+        period: { startDate: null, endDate: null }
+      };
     }
   }
 } 

@@ -45,12 +45,21 @@ const swaggerDefinition = {
       ApiError: {
         type: 'object',
         properties: {
-          code: { type: 'string' },
+          type: { 
+            type: 'string', 
+            enum: [
+              'SYSTEM', 'DATABASE', 'NETWORK', 'AUTHENTICATION', 'AUTHORIZATION',
+              'VALIDATION', 'RATE_LIMIT', 'TRANSLATION', 'NEWS', 'USER',
+              'EXTERNAL_API', 'GOOGLE_TRANSLATE', 'RSS_FEED', 'NOT_FOUND', 'UNKNOWN'
+            ]
+          },
           message: { type: 'string' },
-          details: { description: '에러 상세 정보' },
-          field: { type: 'string' },
+          httpCode: { type: 'integer' },
+          isRetryable: { type: 'boolean' },
+          errorId: { type: 'string' },
+          context: { type: 'object', description: '에러 컨텍스트 (개발 환경에서만 제공)' },
         },
-        required: ['code', 'message'],
+        required: ['type', 'message', 'httpCode', 'isRetryable', 'errorId'],
       },
       PaginationMeta: {
         type: 'object',
@@ -63,6 +72,15 @@ const swaggerDefinition = {
           hasPrev: { type: 'boolean' },
         },
         required: ['page', 'limit', 'total', 'totalPages', 'hasNext', 'hasPrev'],
+      },
+      CursorPaginationMeta: {
+        type: 'object',
+        properties: {
+          nextCursor: { type: 'string', nullable: true },
+          hasNextPage: { type: 'boolean' },
+          count: { type: 'integer', minimum: 0 },
+        },
+        required: ['hasNextPage', 'count'],
       },
       NewsItem: {
         type: 'object',
@@ -85,6 +103,23 @@ const swaggerDefinition = {
           updatedAt: { type: 'string', format: 'date-time' },
         },
         required: ['id', 'title', 'url', 'source', 'sourceId', 'category', 'publishedAt', 'excerpt', 'isProcessed', 'createdAt', 'updatedAt'],
+      },
+      NewsSummary: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          title: { type: 'string' },
+          summary: { type: 'string' },
+          category: { 
+            type: 'string',
+            enum: ['politics', 'economy', 'society', 'culture', 'world', 'sports', 'entertainment', 'tech']
+          },
+          keywords: { type: 'array', items: { type: 'string' } },
+          originalNewsIds: { type: 'array', items: { type: 'string' } },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
+        },
+        required: ['id', 'title', 'summary', 'category', 'keywords', 'createdAt', 'updatedAt'],
       },
       TranslationRequest: {
         type: 'object',
@@ -112,6 +147,53 @@ const swaggerDefinition = {
         },
         required: ['originalText', 'translatedText', 'sourceLang', 'targetLang', 'cached'],
       },
+      User: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer' },
+          email: { type: 'string', format: 'email' },
+          name: { type: 'string' },
+          provider: { type: 'string', enum: ['local', 'kakao', 'google'] },
+          profileImage: { type: 'string', format: 'uri' },
+          preferredTime: { type: 'string', format: 'time' },
+          language: { type: 'string', enum: ['ko', 'en', 'ja', 'zh', 'es', 'fr', 'de', 'ru'] },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
+        },
+        required: ['id', 'email', 'language', 'createdAt', 'updatedAt'],
+      },
+      Keyword: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer' },
+          userId: { type: 'integer' },
+          keyword: { type: 'string' },
+          category: { type: 'string' },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
+        },
+        required: ['id', 'userId', 'keyword', 'createdAt', 'updatedAt'],
+      },
+      AuthTokens: {
+        type: 'object',
+        properties: {
+          accessToken: { type: 'string' },
+          refreshToken: { type: 'string' },
+          expiresIn: { type: 'string' },
+        },
+        required: ['accessToken', 'refreshToken', 'expiresIn'],
+      },
+      SupabaseMCP: {
+        type: 'object',
+        description: 'Supabase Management Console Platform 정보',
+        properties: {
+          projectId: { type: 'string' },
+          apiUrl: { type: 'string', format: 'uri' },
+          dbUrl: { type: 'string' },
+          adminPanel: { type: 'string', format: 'uri' },
+          connectionString: { type: 'string' },
+        },
+      },
     },
   },
   tags: [
@@ -122,7 +204,12 @@ const swaggerDefinition = {
     { name: 'News v2', description: '뉴스 관련 API (v2 - RESTful)' },
     { name: 'Translation v2', description: '번역 관련 API (v2 - RESTful)' },
     { name: 'Users v2', description: '사용자 관련 API (v2 - RESTful)' },
+    { name: 'Supabase', description: 'Supabase MCP 관련 정보' },
   ],
+  externalDocs: {
+    description: 'Supabase 문서',
+    url: 'https://supabase.com/docs',
+  },
 };
 
 const options = {

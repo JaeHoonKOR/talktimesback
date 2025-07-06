@@ -11,6 +11,7 @@ import kakaoRoutes from './routes/kakao.routes';
 import newsRoutes from './routes/news.routes';
 import translationRoutes from './routes/translation.routes';
 // V2 API 라우터 (RESTful)
+import authRoutesV2 from './routes/auth.routes.v2';
 import newsRoutesV2 from './routes/news.routes.v2';
 import translationRoutesV2 from './routes/translations.routes.v2';
 import userRoutesV2 from './routes/users.routes.v2';
@@ -64,7 +65,7 @@ app.use((req, res, next) => {
     acc[key] = maskSensitiveValue(key, String(req.body[key]));
     return acc;
   }, {} as Record<string, string>) : {};
-
+  
   serverLogger.debug(`요청 시작: ${req.method} ${req.originalUrl}`, {
     method: req.method,
     path: req.originalUrl,
@@ -128,6 +129,7 @@ app.use('/api/news', newsRoutes);
 app.use('/api/translation', translationRoutes);
 
 // V2 API 라우터 연결 (RESTful)
+app.use('/api/v2/auth', authRoutesV2);
 app.use('/api/v2/news', newsRoutesV2);
 app.use('/api/v2/translations', translationRoutesV2);
 app.use('/api/v2/users', userRoutesV2);

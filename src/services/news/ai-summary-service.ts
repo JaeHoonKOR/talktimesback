@@ -185,4 +185,9 @@ export async function batchProcessUnprocessedNews(limit = 20): Promise<number> {
   }
   
   return processedCount;
-} 
+}
+
+/**
+ * 뉴스 요약 생성 (별칭)
+ */
+export const generateSummary = summarizeNewsItem; 

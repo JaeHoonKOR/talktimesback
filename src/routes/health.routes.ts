@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../server';
+import { ErrorCode } from '../types/api.types';
 import { SupabaseConnectionChecker } from '../utils/database';
 import { ResponseHelper } from '../utils/response.helper';
 
@@ -53,7 +54,7 @@ router.get('/database', async (req, res) => {
         timestamp: new Date().toISOString()
       };
       
-      ResponseHelper.error(res, 'DATABASE_ERROR', healthData.message, healthData);
+      ResponseHelper.error(res, ErrorCode.DATABASE_ERROR, healthData.message, healthData);
     }
   } catch (error) {
     const healthData = {
@@ -124,7 +125,7 @@ router.get('/full', async (req, res) => {
     if (overallStatus === 'healthy') {
       ResponseHelper.success(res, healthData);
     } else {
-      ResponseHelper.error(res, 'SYSTEM_ERROR', healthData.message, healthData);
+      ResponseHelper.error(res, ErrorCode.SYSTEM_ERROR, healthData.message, healthData);
     }
   } catch (error) {
     ResponseHelper.internalServerError(

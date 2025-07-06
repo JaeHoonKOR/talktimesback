@@ -1,4 +1,5 @@
 import { Request, Response, Router } from 'express';
+import { query } from 'express-validator';
 import {
     cleanupCache,
     clearAllCache,
@@ -129,7 +130,13 @@ router.post('/public/batch',
  * 뉴스 번역 조회
  */
 router.get('/news/:id', 
-  createValidationMiddleware(TranslationValidation.translateNews()),
+  createValidationMiddleware([
+    ...ValidationRules.id('id'),
+    query('lang')
+      .optional()
+      .isLength({ min: 2, max: 5 })
+      .withMessage('언어 코드는 2-5자 사이여야 합니다.')
+  ]),
   async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
@@ -251,7 +258,7 @@ router.post('/cache/cleanup',
 router.delete('/cache/languages/:targetLang', 
   authenticateToken,
   createValidationMiddleware([
-    ValidationRules.id('targetLang')
+    ...ValidationRules.id('targetLang')
   ]),
   clearLanguageCache
 );

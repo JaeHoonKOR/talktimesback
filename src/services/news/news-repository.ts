@@ -1,5 +1,20 @@
+import { PrismaClient } from '@prisma/client';
 import { prisma } from '../../server';
 import { NewsFilterOptions, NewsItem, NewsStats } from '../../types/news.types';
+
+const prismaClient = new PrismaClient();
+
+/**
+ * Prisma null 값을 undefined로 변환하는 헬퍼 함수
+ */
+function convertPrismaToNewsItem(prismaItem: any): NewsItem {
+  return {
+    ...prismaItem,
+    content: prismaItem.content || undefined,
+    imageUrl: prismaItem.imageUrl || undefined,
+    aiSummary: prismaItem.aiSummary || undefined
+  };
+}
 
 /**
  * 단일 뉴스 항목 저장
@@ -71,7 +86,12 @@ export async function getNewsById(id: string): Promise<NewsItem | null> {
 
   if (!newsItem) return null;
 
-  return newsItem;
+  return {
+    ...newsItem,
+    content: newsItem.content || undefined,
+    imageUrl: newsItem.imageUrl || undefined,
+    aiSummary: newsItem.aiSummary || undefined
+  };
 }
 
 /**
@@ -120,34 +140,61 @@ export async function getNewsItems(options: NewsFilterOptions): Promise<NewsItem
   }
 
   // 데이터 조회
-  return await prisma.news.findMany({
+  const newsItems = await prisma.news.findMany({
     where,
     orderBy: { publishedAt: 'desc' },
     skip: offset,
     take: limit
   });
+  
+  // null을 undefined로 변환
+  return newsItems.map(convertPrismaToNewsItem);
 }
 
 /**
  * 카테고리별 최신 뉴스 가져오기
  */
 export async function getLatestNewsByCategory(category: string, limit = 10): Promise<NewsItem[]> {
-  return await prisma.news.findMany({
+  const newsItems = await prisma.news.findMany({
     where: { category },
     orderBy: { publishedAt: 'desc' },
     take: limit
   });
+  
+  return newsItems.map(convertPrismaToNewsItem);
 }
 
 /**
- * 처리되지 않은 뉴스 항목 가져오기 (AI 요약 대기 항목)
+ * 뉴스 처리 상태 업데이트
  */
-export async function getUnprocessedNewsItems(limit = 50): Promise<NewsItem[]> {
-  return await prisma.news.findMany({
-    where: { isProcessed: false },
-    orderBy: { publishedAt: 'desc' },
-    take: limit
-  });
+export async function updateNewsProcessingStatus(newsId: string, isProcessed: boolean): Promise<void> {
+  try {
+    await prisma.news.update({
+      where: { id: newsId },
+      data: { isProcessed }
+    });
+  } catch (error) {
+    console.error('뉴스 처리 상태 업데이트 중 오류:', error);
+    throw error;
+  }
+}
+
+/**
+ * 처리되지 않은 뉴스 항목 조회
+ */
+export async function getUnprocessedNewsItems(limit: number = 20): Promise<NewsItem[]> {
+  try {
+    const newsItems = await prisma.news.findMany({
+      where: { isProcessed: false },
+      orderBy: { createdAt: 'desc' },
+      take: limit
+    });
+    
+    return newsItems.map(convertPrismaToNewsItem);
+  } catch (error) {
+    console.error('처리되지 않은 뉴스 조회 중 오류:', error);
+    return [];
+  }
 }
 
 /**
@@ -188,4 +235,81 @@ export async function getNewsStats(): Promise<NewsStats> {
     newsBySource,
     latestUpdate: latestNews?.createdAt || new Date(),
   };
+}
+
+export async function createNewsItem(newsData: any): Promise<NewsItem> {
+  const newsItem = await prisma.news.create({
+    data: newsData
+  });
+  
+  return convertPrismaToNewsItem(newsItem);
+}
+
+export async function getNewsByCategory(category: string): Promise<NewsItem[]> {
+  const newsItems = await prisma.news.findMany({
+    where: { category },
+    orderBy: { publishedAt: 'desc' },
+    take: 50
+  });
+  
+  return newsItems.map(convertPrismaToNewsItem);
+}
+
+export async function getLatestNews(limit: number = 20): Promise<NewsItem[]> {
+  const newsItems = await prisma.news.findMany({
+    orderBy: { publishedAt: 'desc' },
+    take: limit
+  });
+  
+  return newsItems.map(convertPrismaToNewsItem);
+}
+
+async function findById(id: string): Promise<NewsItem | null> {
+  const newsItem = await prisma.news.findUnique({
+    where: { id }
+  });
+
+  if (!newsItem) {
+    return null;
+  }
+
+  return convertPrismaToNewsItem(newsItem);
+}
+
+async function findMany(options: NewsFilterOptions = {}): Promise<NewsItem[]> {
+  const { categories, sources, keywords, startDate, endDate, limit = 20, offset = 0 } = options;
+
+  const whereClause: any = {};
+
+  if (categories && categories.length > 0) {
+    whereClause.category = { in: categories };
+  }
+
+  if (sources && sources.length > 0) {
+    whereClause.source = { in: sources };
+  }
+
+  if (keywords && keywords.length > 0) {
+    whereClause.OR = keywords.map(keyword => ({
+      OR: [
+        { title: { contains: keyword, mode: 'insensitive' } },
+        { excerpt: { contains: keyword, mode: 'insensitive' } }
+      ]
+    }));
+  }
+
+  if (startDate || endDate) {
+    whereClause.publishedAt = {};
+    if (startDate) whereClause.publishedAt.gte = startDate;
+    if (endDate) whereClause.publishedAt.lte = endDate;
+  }
+
+  const newsItems = await prisma.news.findMany({
+    where: whereClause,
+    orderBy: { publishedAt: 'desc' },
+    take: limit,
+    skip: offset
+  });
+
+  return newsItems.map(convertPrismaToNewsItem);
 } 

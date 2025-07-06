@@ -285,4 +285,66 @@ npm run generate-jwt-secret -- --generate-only
 - JWT 보안 모범사례: https://auth0.com/blog/a-look-at-the-latest-draft-for-jwt-bcp/
 - Node.js crypto 모듈: https://nodejs.org/api/crypto.html
 
---- 
+## 프론트엔드 개발자를 위한 API 문서 및 가이드 개선
+
+### Metadata
+- **Timestamp**: 2025-06-28 14:45:00 (KST)
+- **Severity**: Medium
+- **Impacted Systems**: API 문서화, Swagger, README, Supabase MCP
+- **Tags**: documentation, api, swagger, supabase, frontend-integration
+
+### Problem Summary
+프론트엔드 개발자들이 백엔드 API를 쉽게 이해하고 활용할 수 있도록 API 문서와 가이드가 필요했습니다. 특히 Supabase MCP 연동 방법과 RESTful API 사용법에 대한 명확한 설명이 부족했습니다.
+
+### Root Cause
+1. Swagger 문서가 기본적인 내용만 포함하고 있어 상세 정보 부족
+2. README.md가 간략하게만 작성되어 있어 개발자 가이드 역할 미흡
+3. Supabase MCP 연동 방법에 대한 명확한 가이드 부재
+4. 프론트엔드 개발자 관점의 API 사용 예시 부족
+
+### Resolution Steps
+1. **Swagger 문서 개선**
+   - 모든 API 엔드포인트에 대한 상세 스키마 정의 추가
+   - 에러 응답 타입 상세화 (타입, 메시지, HTTP 코드, 재시도 가능 여부 등)
+   - 커서 기반 페이지네이션 스키마 추가
+   - Supabase MCP 관련 정보 스키마 추가
+   - 외부 문서 링크 추가
+
+2. **README.md 전면 개편**
+   - 한국어로 작성하여 접근성 향상
+   - 목차 및 구조화된 문서 형식 적용
+   - API 엔드포인트 테이블 형식으로 정리
+   - 인증 흐름 상세 설명 및 예시 코드 추가
+   - 에러 처리 가이드 및 예시 추가
+   - 페이지네이션 사용법 상세 설명
+   - 환경 변수 설정 가이드 제공
+
+3. **Supabase MCP 연동 가이드 개선**
+   - 프론트엔드 개발자 관점의 Supabase 클라이언트 설정 방법 추가
+   - 주요 데이터 모델 접근 방법 예시 코드 제공
+   - JikSend API와 Supabase 연동 예시 추가
+   - 실시간 기능 및 파일 스토리지 활용 방법 설명
+   - 주의사항 및 모범 사례 정리
+
+### Error Message / Logs
+해당 없음 (문서화 개선 작업)
+
+### Related Commits or Pull Requests
+- swagger.ts 파일 업데이트
+- README.md 전면 개편
+- SUPABASE_SETUP_GUIDE.md 업데이트
+
+### Reproduction Steps
+해당 없음 (문서화 개선 작업)
+
+### Prevention / Lessons Learned
+1. **문서 주도 개발(Documentation-Driven Development)**: API 설계 단계에서부터 문서화 병행
+2. **사용자 중심 문서화**: 문서 작성 시 최종 사용자(프론트엔드 개발자) 관점 고려
+3. **코드 예시 중요성**: 실제 사용 사례를 보여주는 코드 예시 제공
+4. **다국어 지원**: 팀 구성에 맞는 언어로 문서 제공 (한국어)
+5. **지속적 문서 업데이트**: API 변경 시 문서도 함께 업데이트하는 프로세스 수립
+
+### Related Links
+- [Swagger/OpenAPI 문서](http://localhost:4000/api-docs)
+- [Supabase 공식 문서](https://supabase.com/docs)
+- [JikSend API GitHub 저장소](https://github.com/jiksend/backend)

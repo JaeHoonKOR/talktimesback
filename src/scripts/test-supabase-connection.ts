@@ -34,12 +34,12 @@ async function testSupabaseConnection() {
     console.log('2️⃣ 데이터베이스 정보 조회...');
     const info = await checker.getConnectionInfo();
     if (info.connected) {
-      console.log(`   📊 데이터베이스: ${info.info.database_name}`);
-      console.log(`   👤 사용자: ${info.info.user_name}`);
-      console.log(`   🌐 서버 IP: ${info.info.server_ip || 'N/A'}`);
-      console.log(`   🔌 포트: ${info.info.server_port || 'N/A'}`);
-      console.log(`   🔧 버전: ${info.info.version.split(' ')[0]} ${info.info.version.split(' ')[1]}`);
-      console.log(`   ⏰ 서버 시간: ${info.info.current_time}\n`);
+      console.log(`   📊 데이터베이스: ${info.info?.database_name || 'N/A'}`);
+      console.log(`   👤 사용자: ${info.info?.user_name || 'N/A'}`);
+      console.log(`   🌐 서버 IP: ${info.info?.server_ip || 'N/A'}`);
+      console.log(`   🔌 포트: ${info.info?.server_port || 'N/A'}`);
+      console.log(`   🔧 버전: ${info.info?.version?.split(' ')[0] || 'N/A'} ${info.info?.version?.split(' ')[1] || ''}`);
+      console.log(`   ⏰ 서버 시간: ${info.info?.current_time || 'N/A'}\n`);
     }
 
     // 3. 테이블 목록 조회
@@ -48,9 +48,13 @@ async function testSupabaseConnection() {
     if (tables.success) {
       console.log(`   📋 총 ${tables.count}개의 테이블 발견`);
       if (tables.count > 0) {
-        tables.tables.forEach((table: any, index: number) => {
-          console.log(`      ${index + 1}. ${table.table_name} (${table.table_type})`);
-        });
+        if (Array.isArray(tables.tables)) {
+          tables.tables.forEach((table: any, index: number) => {
+            console.log(`      ${index + 1}. ${table.table_name} (${table.table_type})`);
+          });
+        } else {
+          console.log('   ⚠️  테이블이 없습니다. Prisma 마이그레이션을 실행해주세요.');
+        }
       } else {
         console.log('   ⚠️  테이블이 없습니다. Prisma 마이그레이션을 실행해주세요.');
       }

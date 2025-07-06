@@ -33,17 +33,6 @@ export class DatabaseConnectionManager extends EventEmitter {
         db: {
           url: process.env.DATABASE_URL,
         },
-      },
-      // 연결 풀 최적화 설정
-      __internal: {
-        engine: {
-          // 연결 풀 크기 설정
-          connectionLimit: parseInt(process.env.DB_CONNECTION_LIMIT || '10'),
-          // 연결 타임아웃 설정 (30초)
-          queryTimeout: parseInt(process.env.DB_QUERY_TIMEOUT || '30000'),
-          // 트랜잭션 타임아웃 설정 (5초)
-          transactionTimeout: parseInt(process.env.DB_TRANSACTION_TIMEOUT || '5000'),
-        }
       }
     });
   }
@@ -164,7 +153,37 @@ export class DatabaseConnectionManager extends EventEmitter {
       console.error('데이터베이스 연결 종료 오류:', error);
     }
   }
+
+  /**
+   * SQL 쿼리 실행 메서드
+   */
+  public async executeQuery(query: string, params?: any[]): Promise<{ rows: any[]; rowCount: number }> {
+    try {
+      // Raw SQL 쿼리 실행
+      const result = await this._prisma.$queryRawUnsafe(query, ...(params || []));
+      
+      // 결과를 배열로 변환 (SELECT 쿼리의 경우)
+      if (Array.isArray(result)) {
+        return {
+          rows: result,
+          rowCount: result.length
+        };
+      }
+      
+      // INSERT, UPDATE, DELETE 등의 경우
+      return {
+        rows: [],
+        rowCount: typeof result === 'number' ? result : 0
+      };
+    } catch (error) {
+      console.error('SQL 쿼리 실행 오류:', error);
+      throw error;
+    }
+  }
 }
 
 // 싱글톤 인스턴스 익스포트
-export const dbManager = DatabaseConnectionManager.getInstance(); 
+export const dbManager = DatabaseConnectionManager.getInstance();
+
+// 호환성을 위한 별칭 export
+export const DatabaseManager = DatabaseConnectionManager; 
